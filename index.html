@@ -1,11 +1,91 @@
 <%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8"%>
 <%@ page import="java.util.*" %>
+<%@ page import="java.text.DecimalFormat" %>
 <%@ page import="com.dba.models.*" %>
 
+<%!
+    private String html(Object value){
+        if(value == null) return "";
+        String s = String.valueOf(value);
+        return s.replace("&","&amp;")
+                .replace("<","&lt;")
+                .replace(">","&gt;")
+                .replace("\"","&quot;")
+                .replace("'","&#39;");
+    }
+
+    private String fmt(Object value){
+        if(value == null) return "0";
+        try{
+            double d = Double.parseDouble(String.valueOf(value));
+            return new DecimalFormat("#,##0.##").format(d);
+        }catch(Exception e){
+            return String.valueOf(value);
+        }
+    }
+
+    private boolean isOkStatus(String status){
+        if(status == null) return false;
+        String s = status.toLowerCase();
+        return !(s.contains("error") || s.contains("fail") || s.contains("disconnect"));
+    }
+%>
+
 <%
-Map<String,Object> fullData = (Map<String,Object>) request.getAttribute("fulldata");
+String site = request.getParameter("site");
+String target = request.getParameter("target");
+
+if(request.getAttribute("selectedSite") != null){
+    site = String.valueOf(request.getAttribute("selectedSite"));
+}
+if(request.getAttribute("selectedTarget") != null){
+    target = String.valueOf(request.getAttribute("selectedTarget"));
+}
+
+if(site == null || site.trim().equals("")) site = "PR";
+if(target == null || target.trim().equals("")) target = "MIDB";
+
+String selectedDb = site + "-" + target;
+
 String status = (String) request.getAttribute("status");
-if(status == null) status = "Disconnected";
+
+Object fullObj = request.getAttribute("fulldata");
+if(fullObj == null){
+    fullObj = request.getAttribute("fullData");
+}
+
+Map<String,Object> fullData = null;
+if(fullObj instanceof Map){
+    fullData = (Map<String,Object>) fullObj;
+}
+
+Object sizeSingle = request.getAttribute("DBSizeData");
+Object fraSingle = request.getAttribute("FraData");
+Object instanceSingle = request.getAttribute("InstanceData");
+Object sessionSingle = request.getAttribute("SessionData");
+Object archiveSingle = request.getAttribute("ArchivesData");
+Object threadSingle = request.getAttribute("ThreadData");
+
+boolean hasSingleData =
+        sizeSingle != null ||
+        fraSingle != null ||
+        instanceSingle != null ||
+        sessionSingle != null ||
+        archiveSingle != null ||
+        threadSingle != null;
+
+String uri = request.getRequestURI().toLowerCase();
+boolean cameFromFetchStats = uri.contains("fetchstats");
+boolean cameFromRefreshStats = uri.contains("refreshstats");
+
+/*
+    Only first website load should open fixed dashboard.
+    It will NOT redirect after clicking Connect / Stats.
+*/
+if(fullData == null && !hasSingleData && !cameFromFetchStats && !cameFromRefreshStats){
+    response.sendRedirect(request.getContextPath() + "/refreshstats");
+    return;
+}
 
 String[] fixedTabs = {
     "PR-MIDB",
@@ -16,22 +96,97 @@ String[] fixedTabs = {
     "DR-MIDB"
 };
 
-if(fullData == null && request.getAttribute("DBSizeData") == null){
-%>
-<script>
-    window.location.href = "refreshstats";
-</script>
-<%
+LinkedHashMap<String, Map<String,Object>> pageData = new LinkedHashMap<String, Map<String,Object>>();
+
+boolean dashboardMode = fullData != null;
+
+if(dashboardMode){
+    for(String key : fixedTabs){
+        Object item = fullData.get(key);
+        if(item instanceof Map){
+            pageData.put(key, (Map<String,Object>) item);
+        }else{
+            pageData.put(key, new HashMap<String,Object>());
+        }
+    }
+
+    if(status == null || status.trim().equals("") || status.toLowerCase().contains("disconnect")){
+        status = "Fixed dashboard loaded";
+    }
+}else if(hasSingleData){
+    Map<String,Object> singleMap = new HashMap<String,Object>();
+    singleMap.put("size", sizeSingle);
+    singleMap.put("fra", fraSingle);
+    singleMap.put("instanceinfo", instanceSingle);
+    singleMap.put("activesession", sessionSingle);
+    singleMap.put("archives", archiveSingle);
+    singleMap.put("thread", threadSingle);
+    pageData.put(selectedDb, singleMap);
+
+    if(status == null || status.trim().equals("")){
+        status = "Connected to " + selectedDb;
+    }
+}else{
+    if(status == null || status.trim().equals("")){
+        status = "Disconnected";
+    }
 }
+
+boolean okStatus = isOkStatus(status) || dashboardMode;
 %>
 
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>SBI DBA MONITOR</title>
+<title>SBI DBA Monitor</title>
+
+<script>
+(function(){
+    var theme = localStorage.getItem("dbaTheme") || "dark";
+    document.documentElement.setAttribute("data-theme", theme);
+})();
+</script>
 
 <style>
+:root[data-theme="dark"]{
+    --bg:#0f172a;
+    --panel:#111827;
+    --panel2:#1e293b;
+    --card:#172033;
+    --card2:#111827;
+    --text:#f8fafc;
+    --muted:#94a3b8;
+    --line:#334155;
+    --accent:#38bdf8;
+    --accent2:#2563eb;
+    --tableHead:#020617;
+    --row:#243044;
+    --row2:#1b2538;
+    --good:#22c55e;
+    --bad:#ef4444;
+    --shadow:0 12px 35px rgba(0,0,0,0.25);
+}
+
+:root[data-theme="light"]{
+    --bg:#f1f5f9;
+    --panel:#ffffff;
+    --panel2:#e2e8f0;
+    --card:#ffffff;
+    --card2:#f8fafc;
+    --text:#0f172a;
+    --muted:#64748b;
+    --line:#cbd5e1;
+    --accent:#0284c7;
+    --accent2:#2563eb;
+    --tableHead:#e2e8f0;
+    --row:#ffffff;
+    --row2:#f1f5f9;
+    --good:#16a34a;
+    --bad:#dc2626;
+    --shadow:0 12px 35px rgba(15,23,42,0.12);
+}
+
 *{
     margin:0;
     padding:0;
@@ -41,53 +196,68 @@ if(fullData == null && request.getAttribute("DBSizeData") == null){
 
 body{
     height:100vh;
-    background:#0f172a;
-    color:#fff;
+    background:var(--bg);
+    color:var(--text);
     overflow:hidden;
 }
 
 .app{
-    display:flex;
     height:100vh;
-    background:
-        linear-gradient(rgba(15,23,42,0.82), rgba(15,23,42,0.82)),
-        radial-gradient(circle at top right,#334155,#020617);
+    display:flex;
 }
 
 /* Sidebar */
 .sidebar{
-    width:230px;
-    background:rgba(15,23,42,0.95);
-    border-right:1px solid #334155;
-    padding-top:15px;
+    width:235px;
+    background:var(--panel);
+    border-right:1px solid var(--line);
+    display:flex;
+    flex-direction:column;
 }
 
 .logo{
-    font-size:20px;
-    font-weight:bold;
-    padding:18px;
-    border-bottom:1px solid #334155;
+    height:70px;
+    display:flex;
+    align-items:center;
+    padding:0 20px;
+    font-size:19px;
+    font-weight:800;
+    letter-spacing:.5px;
+    border-bottom:1px solid var(--line);
+}
+
+.logo span{
+    color:var(--accent);
+}
+
+.menu{
+    padding:14px 10px;
 }
 
 .menu-title{
-    padding:15px 18px 8px;
-    color:#cbd5e1;
-    font-size:13px;
-    font-weight:bold;
+    color:var(--muted);
+    font-size:12px;
+    font-weight:700;
+    text-transform:uppercase;
+    margin:18px 12px 8px;
 }
 
 .menu a{
-    display:block;
-    padding:11px 25px;
-    color:#e2e8f0;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:11px 14px;
+    color:var(--text);
     text-decoration:none;
+    border-radius:10px;
     font-size:14px;
+    margin-bottom:5px;
 }
 
 .menu a:hover,
 .menu a.active{
-    background:#38bdf8;
-    color:#020617;
+    background:var(--accent);
+    color:#fff;
 }
 
 /* Main */
@@ -95,81 +265,145 @@ body{
     flex:1;
     display:flex;
     flex-direction:column;
-    overflow:hidden;
+    min-width:0;
 }
 
-/* Topbar */
+/* Top bar */
 .topbar{
-    height:65px;
-    background:rgba(30,41,59,0.95);
+    min-height:70px;
+    background:var(--panel);
+    border-bottom:1px solid var(--line);
     display:flex;
     align-items:center;
-    gap:15px;
-    padding:0 20px;
-    border-bottom:1px solid #475569;
+    gap:14px;
+    padding:12px 18px;
 }
 
-.topbar label{
-    font-weight:bold;
+.db-form{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    flex-wrap:wrap;
+}
+
+label{
     font-size:13px;
+    font-weight:700;
+    color:var(--muted);
 }
 
-.topbar select,
-.topbar button{
-    padding:8px 12px;
-    border-radius:6px;
-    border:1px solid #94a3b8;
+select,
+button{
+    height:38px;
+    border-radius:10px;
+    border:1px solid var(--line);
+    background:var(--card2);
+    color:var(--text);
+    padding:0 12px;
+    outline:none;
 }
 
-.btn{
-    background:#38bdf8;
-    color:#020617;
-    font-weight:bold;
+select{
+    min-width:110px;
+}
+
+button{
     cursor:pointer;
+    font-weight:700;
 }
 
-.status{
+.btn-primary{
+    background:var(--accent);
+    border-color:var(--accent);
+    color:#fff;
+}
+
+.btn-secondary{
+    background:var(--card2);
+    color:var(--text);
+}
+
+.btn-secondary:hover{
+    border-color:var(--accent);
+}
+
+.status-box{
     margin-left:auto;
-    font-weight:bold;
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:14px;
+    font-weight:800;
+    white-space:nowrap;
 }
 
-.dot{
-    display:inline-block;
+.status-dot{
     width:10px;
     height:10px;
     border-radius:50%;
-    margin-right:6px;
-    background:<%= status.toLowerCase().contains("error") || status.toLowerCase().contains("disconnect") ? "#ef4444" : "#22c55e" %>;
+    background:<%= okStatus ? "var(--good)" : "var(--bad)" %>;
+}
+
+.mode-btn{
+    width:42px;
+    padding:0;
 }
 
 /* Tabs */
 .tabs{
+    background:var(--panel);
+    border-bottom:1px solid var(--line);
     display:flex;
-    background:rgba(30,41,59,0.85);
-    border-bottom:1px solid #475569;
     overflow-x:auto;
 }
 
 .tab{
-    padding:14px 20px;
-    border-right:1px solid #475569;
-    cursor:pointer;
+    padding:13px 18px;
+    border-right:1px solid var(--line);
+    color:var(--muted);
     font-size:13px;
-    color:#e2e8f0;
+    font-weight:700;
     white-space:nowrap;
+    cursor:pointer;
 }
 
 .tab.active{
-    background:#2563eb;
     color:#fff;
-    font-weight:bold;
+    background:var(--accent2);
 }
 
 /* Content */
 .content{
     flex:1;
     overflow:auto;
-    padding:25px;
+    padding:22px;
+}
+
+.page-heading{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-bottom:18px;
+    gap:12px;
+}
+
+.page-heading h2{
+    font-size:22px;
+}
+
+.page-heading p{
+    color:var(--muted);
+    margin-top:4px;
+    font-size:13px;
+}
+
+.badge{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:999px;
+    padding:8px 13px;
+    font-size:13px;
+    color:var(--muted);
 }
 
 .tab-content{
@@ -183,80 +417,128 @@ body{
 .grid{
     display:grid;
     grid-template-columns:1fr 1fr;
-    gap:20px;
+    gap:18px;
 }
 
 .card{
-    background:rgba(15,23,42,0.72);
-    border:1px solid #93c5fd;
-    border-radius:10px;
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:18px;
     padding:18px;
-    box-shadow:0 0 12px rgba(147,197,253,0.35);
+    box-shadow:var(--shadow);
 }
 
 .card.full{
-    grid-column:1/3;
+    grid-column:1 / 3;
 }
 
 .card h3{
-    margin-bottom:12px;
-    color:#fff;
-    font-size:17px;
+    font-size:16px;
+    margin-bottom:14px;
 }
 
 .big-value{
+    min-height:120px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
     text-align:center;
-    font-size:28px;
-    color:#67e8f9;
-    font-weight:bold;
-    padding:18px;
+    font-size:30px;
+    color:var(--accent);
+    font-weight:900;
+}
+
+.table-wrap{
+    width:100%;
+    overflow-x:auto;
 }
 
 table{
     width:100%;
     border-collapse:collapse;
-    background:rgba(15,23,42,0.85);
+    overflow:hidden;
+    border-radius:12px;
 }
 
 th{
-    background:#020617;
-    color:#fff;
-    padding:10px;
-    font-size:13px;
-    border:1px solid #64748b;
+    background:var(--tableHead);
+    color:var(--text);
+    padding:11px;
+    font-size:12px;
+    border:1px solid var(--line);
 }
 
 td{
-    padding:9px;
-    border:1px solid #64748b;
+    padding:10px;
     text-align:center;
+    border:1px solid var(--line);
     font-size:13px;
+    color:var(--text);
 }
 
-tr:nth-child(even){
-    background:rgba(148,163,184,0.12);
+tbody tr:nth-child(odd){
+    background:var(--row);
 }
 
-.empty{
+tbody tr:nth-child(even){
+    background:var(--row2);
+}
+
+.empty-state{
+    background:var(--card);
+    border:1px dashed var(--line);
+    border-radius:18px;
+    padding:35px;
     text-align:center;
-    color:#cbd5e1;
-    padding:25px;
+    box-shadow:var(--shadow);
 }
 
-.alert{
-    color:#fecaca;
-    background:rgba(127,29,29,0.6);
-    padding:12px;
-    border-radius:8px;
-    margin-bottom:15px;
+.empty-state h2{
+    margin-bottom:10px;
 }
 
-@media(max-width:900px){
+.empty-state p{
+    color:var(--muted);
+    margin-bottom:18px;
+}
+
+.quick-actions{
+    display:flex;
+    justify-content:center;
+    gap:12px;
+    flex-wrap:wrap;
+}
+
+.quick-actions a{
+    text-decoration:none;
+    background:var(--accent);
+    color:#fff;
+    padding:10px 16px;
+    border-radius:10px;
+    font-weight:700;
+    font-size:14px;
+}
+
+@media(max-width:1000px){
+    .sidebar{
+        width:200px;
+    }
+
     .grid{
         grid-template-columns:1fr;
     }
+
     .card.full{
         grid-column:1;
+    }
+
+    .topbar{
+        align-items:flex-start;
+        flex-direction:column;
+    }
+
+    .status-box{
+        margin-left:0;
     }
 }
 </style>
@@ -266,245 +548,354 @@ tr:nth-child(even){
 
 <div class="app">
 
-    <div class="sidebar">
-        <div class="logo">DBA MONITOR</div>
+    <aside class="sidebar">
+        <div class="logo">DBA&nbsp;<span>MONITOR</span></div>
 
-        <div class="menu">
+        <nav class="menu">
             <div class="menu-title">Database Health</div>
-            <a href="tablespaces.jsp">Tablespaces</a>
-            <a href="refreshstats" class="active">Stats</a>
-            <a href="alertlogs.jsp">Alert Logs</a>
-            <a href="gglag.jsp">GoldenGate Lag</a>
+
+            <a href="javascript:void(0)" onclick="goSelected('fetchstats')" class="<%= hasSingleData ? "active" : "" %>">
+                Stats
+            </a>
+
+            <a href="javascript:void(0)" onclick="goSelected('tablespaces.jsp')">
+                Tablespaces
+            </a>
+
+            <a href="javascript:void(0)" onclick="goSelected('alertlogs.jsp')">
+                Alert Logs
+            </a>
+
+            <a href="javascript:void(0)" onclick="goSelected('gglag.jsp')">
+                GoldenGate Lag
+            </a>
 
             <div class="menu-title">User Management</div>
-            <a href="users.jsp">All Users</a>
-            <a href="sessions.jsp">Active Sessions</a>
-        </div>
-    </div>
 
-    <div class="main">
+            <a href="javascript:void(0)" onclick="goSelected('users.jsp')">
+                All Users
+            </a>
 
-        <div class="topbar">
-            <form action="fetchstats" method="get">
+            <a href="javascript:void(0)" onclick="goSelected('sessions.jsp')">
+                Active Sessions
+            </a>
+        </nav>
+    </aside>
+
+    <main class="main">
+
+        <header class="topbar">
+
+            <form action="fetchstats" method="get" class="db-form">
                 <label>Site</label>
-                <select name="site">
-                    <option value="PR">PR</option>
-                    <option value="DR">DR</option>
+                <select name="site" id="siteSelect">
+                    <option value="PR" <%= "PR".equals(site) ? "selected" : "" %>>PR</option>
+                    <option value="DR" <%= "DR".equals(site) ? "selected" : "" %>>DR</option>
                 </select>
 
                 <label>Target</label>
-                <select name="target">
-                    <option value="MIDB">MIDB</option>
-                    <option value="HIDB">HIDB</option>
-                    <option value="REPORTDB">REPORTDB</option>
-                    <option value="SBISIDB">SBISIDB</option>
-                    <option value="ARCHIVALDB">ARCHIVALDB</option>
+                <select name="target" id="targetSelect">
+                    <option value="MIDB" <%= "MIDB".equals(target) ? "selected" : "" %>>MIDB</option>
+                    <option value="HIDB" <%= "HIDB".equals(target) ? "selected" : "" %>>HIDB</option>
+                    <option value="REPORTDB" <%= "REPORTDB".equals(target) ? "selected" : "" %>>REPORTDB</option>
+                    <option value="SBISIDB" <%= "SBISIDB".equals(target) ? "selected" : "" %>>SBISIDB</option>
+                    <option value="ARCHIVALDB" <%= "ARCHIVALDB".equals(target) ? "selected" : "" %>>ARCHIVALDB</option>
                 </select>
 
-                <button class="btn" type="submit">Connect</button>
+                <button type="submit" class="btn-primary">Connect / Load Stats</button>
             </form>
 
-            <div class="status">
-                <span class="dot"></span>
-                <%= status %>
+            <div class="status-box">
+                <span class="status-dot"></span>
+                <span><%= html(status) %></span>
             </div>
 
             <form action="refreshstats" method="get">
-                <button class="btn" type="submit">Refresh Now</button>
+                <button type="submit" class="btn-secondary">Refresh Fixed Tabs</button>
             </form>
-        </div>
 
-        <div class="tabs">
-            <%
-            for(int i=0;i<fixedTabs.length;i++){
-            %>
-                <div class="tab <%= i==0 ? "active" : "" %>" onclick="openTab('<%= fixedTabs[i] %>', this)">
-                    Stats - <%= fixedTabs[i] %>
-                </div>
-            <%
-            }
-            %>
-        </div>
+            <button type="button" class="btn-secondary mode-btn" onclick="toggleTheme()">☀</button>
 
-        <div class="content">
+        </header>
 
-            <%
-            if(fullData != null){
-                for(int i=0;i<fixedTabs.length;i++){
-                    String key = fixedTabs[i];
-                    Map<String,Object> data = (Map<String,Object>) fullData.get(key);
+        <% if(pageData.size() > 0){ %>
 
-                    dbsize sizeobj = null;
-                    List<fra> fraobj = null;
-                    List<instanceinfo> instanceobj = null;
-                    List<activesession> sessionobj = null;
-                    List<archives> archiveobj = null;
-                    List<archivethread> threadobj = null;
-
-                    if(data != null){
-                        sizeobj = (dbsize)data.get("size");
-                        fraobj = (List<fra>)data.get("fra");
-                        instanceobj = (List<instanceinfo>)data.get("instanceinfo");
-                        sessionobj = (List<activesession>)data.get("activesession");
-                        archiveobj = (List<archives>)data.get("archives");
-                        threadobj = (List<archivethread>)data.get("thread");
+            <div class="tabs">
+                <%
+                    int tabIndex = 0;
+                    for(String key : pageData.keySet()){
+                %>
+                    <div class="tab <%= tabIndex == 0 ? "active" : "" %>"
+                         onclick="openTab('tab-<%= html(key) %>', this)">
+                        Stats - <%= html(key) %>
+                    </div>
+                <%
+                        tabIndex++;
                     }
-            %>
-
-            <div id="<%= key %>" class="tab-content <%= i==0 ? "active" : "" %>">
-                <div class="grid">
-
-                    <div class="card">
-                        <h3>Total Database Size</h3>
-                        <div class="big-value">
-                            <%= sizeobj != null ? sizeobj.getSizeTb() + " TB" : "0.00 TB" %>
-                        </div>
-                    </div>
-
-                    <div class="card">
-                        <h3>Fast Recovery Area Usage</h3>
-                        <table>
-                            <tr>
-                                <th>Name</th>
-                                <th>Limit MB</th>
-                                <th>Used MB</th>
-                                <th>Free %</th>
-                            </tr>
-                            <%
-                            if(fraobj != null && !fraobj.isEmpty()){
-                                for(fra f : fraobj){
-                            %>
-                            <tr>
-                                <td><%= f.getName() %></td>
-                                <td><%= f.getSpaceLimitmb() %></td>
-                                <td><%= f.getSpaceUsedmb() %></td>
-                                <td><%= f.getPercentused() %></td>
-                            </tr>
-                            <%
-                                }
-                            }else{
-                            %>
-                            <tr><td colspan="4">No Data</td></tr>
-                            <% } %>
-                        </table>
-                    </div>
-
-                    <div class="card">
-                        <h3>Instance Startup Times</h3>
-                        <table>
-                            <tr>
-                                <th>Instance Name</th>
-                                <th>Startup Time</th>
-                            </tr>
-                            <%
-                            if(instanceobj != null && !instanceobj.isEmpty()){
-                                for(instanceinfo ins : instanceobj){
-                            %>
-                            <tr>
-                                <td><%= ins.getInstanceName() %></td>
-                                <td><%= ins.getStartupTime() %></td>
-                            </tr>
-                            <%
-                                }
-                            }else{
-                            %>
-                            <tr><td colspan="2">No Data</td></tr>
-                            <% } %>
-                        </table>
-                    </div>
-
-                    <div class="card">
-                        <h3>Active Sessions</h3>
-                        <table>
-                            <tr>
-                                <th>Inst ID</th>
-                                <th>Session Count</th>
-                            </tr>
-                            <%
-                            if(sessionobj != null && !sessionobj.isEmpty()){
-                                for(activesession s : sessionobj){
-                            %>
-                            <tr>
-                                <td><%= s.getInstId() %></td>
-                                <td><%= s.getSessionCount() %></td>
-                            </tr>
-                            <%
-                                }
-                            }else{
-                            %>
-                            <tr><td colspan="2">No Data</td></tr>
-                            <% } %>
-                        </table>
-                    </div>
-
-                    <div class="card full">
-                        <h3>Archives</h3>
-                        <table>
-                            <tr>
-                                <th>Hour</th>
-                                <th>GB</th>
-                                <th>Archives</th>
-                            </tr>
-                            <%
-                            if(archiveobj != null && !archiveobj.isEmpty()){
-                                for(archives a : archiveobj){
-                            %>
-                            <tr>
-                                <td><%= a.getHour() %></td>
-                                <td><%= a.getGb() %></td>
-                                <td><%= a.getArchives() %></td>
-                            </tr>
-                            <%
-                                }
-                            }else{
-                            %>
-                            <tr><td colspan="3">No Data</td></tr>
-                            <% } %>
-                        </table>
-                    </div>
-
-                    <div class="card full">
-                        <h3>Thread Last Sequence</h3>
-                        <table>
-                            <tr>
-                                <th>Thread</th>
-                                <th>Last Sequence Received</th>
-                                <th>Last Sequence Applied</th>
-                                <th>Difference</th>
-                            </tr>
-                            <%
-                            if(threadobj != null && !threadobj.isEmpty()){
-                                for(archivethread t : threadobj){
-                            %>
-                            <tr>
-                                <td><%= t.getThread() %></td>
-                                <td><%= t.getLastSequenceReceived() %></td>
-                                <td><%= t.getLastSequenceApplied() %></td>
-                                <td><%= t.getDifference() %></td>
-                            </tr>
-                            <%
-                                }
-                            }else{
-                            %>
-                            <tr><td colspan="4">No Data</td></tr>
-                            <% } %>
-                        </table>
-                    </div>
-
-                </div>
+                %>
             </div>
 
-            <%
-                }
-            }else{
-            %>
-                <div class="empty">Loading database stats...</div>
-            <%
-            }
-            %>
+            <section class="content">
 
-        </div>
-    </div>
+                <div class="page-heading">
+                    <div>
+                        <% if(dashboardMode){ %>
+                            <h2>Fixed Database Stats Dashboard</h2>
+                            <p>These fixed tabs load on website start and refresh only from Refresh Fixed Tabs button.</p>
+                        <% }else{ %>
+                            <h2>Selected Database Stats</h2>
+                            <p>Showing data only for selected database: <b><%= html(selectedDb) %></b></p>
+                        <% } %>
+                    </div>
+
+                    <div class="badge">
+                        Current Selection: <b><%= html(selectedDb) %></b>
+                    </div>
+                </div>
+
+                <%
+                    int contentIndex = 0;
+
+                    for(String key : pageData.keySet()){
+
+                        Map<String,Object> data = pageData.get(key);
+                        if(data == null){
+                            data = new HashMap<String,Object>();
+                        }
+
+                        dbsize sizeobj = null;
+                        List<fra> fraobj = null;
+                        List<instanceinfo> instanceobj = null;
+                        List<activesession> sessionobj = null;
+                        List<archives> archiveobj = null;
+                        List<archivethread> threadobj = null;
+
+                        try{ sizeobj = (dbsize) data.get("size"); }catch(Exception e){}
+                        try{ fraobj = (List<fra>) data.get("fra"); }catch(Exception e){}
+                        try{ instanceobj = (List<instanceinfo>) data.get("instanceinfo"); }catch(Exception e){}
+                        try{ sessionobj = (List<activesession>) data.get("activesession"); }catch(Exception e){}
+                        try{ archiveobj = (List<archives>) data.get("archives"); }catch(Exception e){}
+                        try{ threadobj = (List<archivethread>) data.get("thread"); }catch(Exception e){}
+                %>
+
+                <div id="tab-<%= html(key) %>" class="tab-content <%= contentIndex == 0 ? "active" : "" %>">
+
+                    <div class="grid">
+
+                        <div class="card">
+                            <h3>Total Database Size</h3>
+                            <div class="big-value">
+                                <%= sizeobj != null ? fmt(sizeobj.getSizeTb()) + " TB" : "0 TB" %>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <h3>Fast Recovery Area Usage</h3>
+
+                            <div class="table-wrap">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>Limit MB</th>
+                                            <th>Used MB</th>
+                                            <th>Free %</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <%
+                                            if(fraobj != null && !fraobj.isEmpty()){
+                                                for(fra f : fraobj){
+                                        %>
+                                        <tr>
+                                            <td><%= html(f.getName()) %></td>
+                                            <td><%= fmt(f.getSpaceLimitmb()) %></td>
+                                            <td><%= fmt(f.getSpaceUsedmb()) %></td>
+                                            <td><%= fmt(f.getPercentused()) %></td>
+                                        </tr>
+                                        <%
+                                                }
+                                            }else{
+                                        %>
+                                        <tr>
+                                            <td colspan="4">No Data</td>
+                                        </tr>
+                                        <% } %>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <h3>Instance Startup Times</h3>
+
+                            <div class="table-wrap">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Instance Name</th>
+                                            <th>Startup Time</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <%
+                                            if(instanceobj != null && !instanceobj.isEmpty()){
+                                                for(instanceinfo ins : instanceobj){
+                                        %>
+                                        <tr>
+                                            <td><%= html(ins.getInstanceName()) %></td>
+                                            <td><%= html(ins.getStartupTime()) %></td>
+                                        </tr>
+                                        <%
+                                                }
+                                            }else{
+                                        %>
+                                        <tr>
+                                            <td colspan="2">No Data</td>
+                                        </tr>
+                                        <% } %>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <h3>Active Sessions</h3>
+
+                            <div class="table-wrap">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Inst ID</th>
+                                            <th>Session Count</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <%
+                                            if(sessionobj != null && !sessionobj.isEmpty()){
+                                                for(activesession s : sessionobj){
+                                        %>
+                                        <tr>
+                                            <td><%= html(s.getInstId()) %></td>
+                                            <td><%= fmt(s.getSessionCount()) %></td>
+                                        </tr>
+                                        <%
+                                                }
+                                            }else{
+                                        %>
+                                        <tr>
+                                            <td colspan="2">No Data</td>
+                                        </tr>
+                                        <% } %>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="card full">
+                            <h3>Archives</h3>
+
+                            <div class="table-wrap">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Hour</th>
+                                            <th>GB</th>
+                                            <th>Archives</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <%
+                                            if(archiveobj != null && !archiveobj.isEmpty()){
+                                                for(archives a : archiveobj){
+                                        %>
+                                        <tr>
+                                            <td><%= html(a.getHour()) %></td>
+                                            <td><%= fmt(a.getGb()) %></td>
+                                            <td><%= fmt(a.getArchives()) %></td>
+                                        </tr>
+                                        <%
+                                                }
+                                            }else{
+                                        %>
+                                        <tr>
+                                            <td colspan="3">No Data</td>
+                                        </tr>
+                                        <% } %>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div class="card full">
+                            <h3>Thread Last Sequence</h3>
+
+                            <div class="table-wrap">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Thread</th>
+                                            <th>Last Sequence Received</th>
+                                            <th>Last Sequence Applied</th>
+                                            <th>Difference</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <%
+                                            if(threadobj != null && !threadobj.isEmpty()){
+                                                for(archivethread t : threadobj){
+                                        %>
+                                        <tr>
+                                            <td><%= html(t.getThread()) %></td>
+                                            <td><%= fmt(t.getLastSequenceReceived()) %></td>
+                                            <td><%= fmt(t.getLastSequenceApplied()) %></td>
+                                            <td><%= fmt(t.getDifference()) %></td>
+                                        </tr>
+                                        <%
+                                                }
+                                            }else{
+                                        %>
+                                        <tr>
+                                            <td colspan="4">No Data</td>
+                                        </tr>
+                                        <% } %>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <%
+                        contentIndex++;
+                    }
+                %>
+
+            </section>
+
+        <% }else{ %>
+
+            <section class="content">
+                <div class="empty-state">
+                    <h2><%= html(status) %></h2>
+                    <p>
+                        Selected database is <b><%= html(selectedDb) %></b>.
+                        Use the menu below to open data for this selected database.
+                    </p>
+
+                    <div class="quick-actions">
+                        <a href="javascript:void(0)" onclick="goSelected('fetchstats')">Open Stats</a>
+                        <a href="javascript:void(0)" onclick="goSelected('tablespaces.jsp')">Open Tablespaces</a>
+                        <a href="javascript:void(0)" onclick="goSelected('users.jsp')">Open Users</a>
+                        <a href="refreshstats">Open Fixed Dashboard</a>
+                    </div>
+                </div>
+            </section>
+
+        <% } %>
+
+    </main>
 </div>
 
 <script>
@@ -512,16 +903,37 @@ function openTab(id, element){
     var contents = document.getElementsByClassName("tab-content");
     var tabs = document.getElementsByClassName("tab");
 
-    for(var i=0;i<contents.length;i++){
+    for(var i = 0; i < contents.length; i++){
         contents[i].classList.remove("active");
     }
 
-    for(var j=0;j<tabs.length;j++){
+    for(var j = 0; j < tabs.length; j++){
         tabs[j].classList.remove("active");
     }
 
-    document.getElementById(id).classList.add("active");
+    var target = document.getElementById(id);
+    if(target){
+        target.classList.add("active");
+    }
+
     element.classList.add("active");
+}
+
+function selectedQuery(){
+    var site = document.getElementById("siteSelect").value;
+    var target = document.getElementById("targetSelect").value;
+    return "?site=" + encodeURIComponent(site) + "&target=" + encodeURIComponent(target);
+}
+
+function goSelected(page){
+    window.location.href = page + selectedQuery();
+}
+
+function toggleTheme(){
+    var current = document.documentElement.getAttribute("data-theme") || "dark";
+    var next = current === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    localStorage.setItem("dbaTheme", next);
 }
 </script>
 
