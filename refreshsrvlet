@@ -23,29 +23,40 @@ public class RefreshStatsServlet extends HttpServlet {
             throws ServletException, IOException {
         
         DBAQueryService service = new DBAQueryService();
-        // LinkedHashMap keeps the order of your 6 databases consistent
         Map<String, dbsize> fixedStats = new LinkedHashMap<>();
         
-        String[] dbTargets = {
-            "PR_MIDB", "PR_ARCHIVAL", "PR_SBISI", 
-            "PR_REPORTDB", "DR_MIDB", "DR_SBISI"
+        // Defining the exact 6 databases with their Site and Target
+        // Format: {Site, Target}
+        String[][] dbConfigs = {
+            {"PR", "MIDB"},
+            {"PR", "ARCHIVAL"},
+            {"PR", "SBISI"},
+            {"PR", "REPORTDB"},
+            {"DR", "MIDB"},
+            {"DR", "SBISI"}
         };
         
         StringBuilder statusMsg = new StringBuilder("Last Update: ");
 
-        for (String target : dbTargets) {
+        for (String[] config : dbConfigs) {
+            String site = config[0];
+            String target = config[1];
+            String displayKey = site + " " + target; // e.g., "PR MIDB"
+            
             Connection conn = null;
             try {
-                conn = databaseconnection.getConnection(target); 
+                // FIXED: Passing BOTH site and target to your existing method
+                conn = databaseconnection.getconnection(site, target); 
+                
                 if (conn != null) {
                     dbsize size = service.getDatabaseSize(conn);
-                    fixedStats.put(target, size);
-                    statusMsg.append(target).append(" [OK] ");
+                    fixedStats.put(displayKey, size);
+                    statusMsg.append("[").append(displayKey).append(" OK] ");
                 } else {
-                    fixedStats.put(target, createEmpty());
+                    fixedStats.put(displayKey, createEmpty());
                 }
             } catch (Exception e) {
-                fixedStats.put(target, createEmpty());
+                fixedStats.put(displayKey, createEmpty());
                 e.printStackTrace();
             } finally {
                 if (conn != null) {
