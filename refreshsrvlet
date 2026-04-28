@@ -1,78 +1,56 @@
-package com.dba.servlets;
-
-import java.io.IOException;
-import java.sql.Connection;
-import java.sql.SQLException;
-import java.util.LinkedHashMap;
-import java.util.Map;
-import javax.servlet.ServletException;
-import javax.servlet.annotation.WebServlet;
-import javax.servlet.http.HttpServlet;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-
-import com.dba.models.dbsize;
-import com.dba.services.DBAQueryService;
-import com.dba.utils.databaseconnection;
-
-@WebServlet("/refreshAllStats")
-public class RefreshStatsServlet extends HttpServlet {
+@WebServlet("/refreshstats")
+public class RefreshStatServlet extends HttpServlet {
     private static final long serialVersionUID = 1L;
 
-    protected void doGet(HttpServletRequest request, HttpServletResponse response) 
-            throws ServletException, IOException {
-        
-        DBAQueryService service = new DBAQueryService();
-        Map<String, dbsize> fixedStats = new LinkedHashMap<>();
-        
-        // Defining the exact 6 databases with their Site and Target
-        // Format: {Site, Target}
-        String[][] dbConfigs = {
-            {"PR", "MIDB"},
-            {"PR", "ARCHIVAL"},
-            {"PR", "SBISI"},
-            {"PR", "REPORTDB"},
-            {"DR", "MIDB"},
-            {"DR", "SBISI"}
-        };
-        
-        StringBuilder statusMsg = new StringBuilder("Last Update: ");
+    private static final String[][] FIXED_DBS = {
+        {"PR", "MIDB"},
+        {"PR", "HIDB"},
+        {"PR", "REPORTDB"},
+        {"PR", "SBISIDB"},
+        {"PR", "ARCHIVALDB"},
+        {"DR", "MIDB"}
+    };
 
-        for (String[] config : dbConfigs) {
-            String site = config[0];
-            String target = config[1];
-            String displayKey = site + " " + target; // e.g., "PR MIDB"
-            
+    protected void doGet(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+
+        dbaqueryservice service = new dbaqueryservice();
+
+        Map<String, Object> dashboardData = new LinkedHashMap<>();
+
+        for (String[] db : FIXED_DBS) {
+            String site = db[0];
+            String target = db[1];
+            String key = site + "-" + target;
+
+            Map<String, Object> stats = new HashMap<>();
             Connection conn = null;
+
             try {
-                // FIXED: Passing BOTH site and target to your existing method
-                conn = databaseconnection.getconnection(site, target); 
-                
-                if (conn != null) {
-                    dbsize size = service.getDatabaseSize(conn);
-                    fixedStats.put(displayKey, size);
-                    statusMsg.append("[").append(displayKey).append(" OK] ");
-                } else {
-                    fixedStats.put(displayKey, createEmpty());
-                }
+                conn = databaseconnection.getconnection(site, target);
+
+                stats.put("size", service.getdbsize(conn));
+                stats.put("fra", service.getfrausage(conn));
+                stats.put("instanceinfo", service.getinstancestats(conn));
+                stats.put("activesession", service.getactivesession(conn));
+                stats.put("archives", service.getarchives(conn));
+                stats.put("thread", service.getarchivethread(conn));
+                stats.put("status", "OK");
+
             } catch (Exception e) {
-                fixedStats.put(displayKey, createEmpty());
                 e.printStackTrace();
+                stats.put("status", "ERROR");
+                stats.put("error", e.getMessage());
             } finally {
-                if (conn != null) {
-                    try { conn.close(); } catch (SQLException e) { e.printStackTrace(); }
-                }
+                databaseconnection.closeconnection(conn);
             }
+
+            dashboardData.put(key, stats);
         }
-        
-        request.setAttribute("fixedStats", fixedStats);
-        request.setAttribute("status", statusMsg.toString());
+
+        request.setAttribute("fulldata", dashboardData);
         request.getRequestDispatcher("index.jsp").forward(request, response);
     }
 
-    private dbsize createEmpty() {
-        dbsize empty = new dbsize();
-        empty.setSizeTb(0.00);
-        return empty;
-    }
-}
+    protected void doPost(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException
