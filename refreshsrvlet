@@ -1,0 +1,67 @@
+package com.dba.servlets;
+
+import java.io.IOException;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import javax.servlet.ServletException;
+import javax.servlet.annotation.WebServlet;
+import javax.servlet.http.HttpServlet;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+
+import com.dba.models.dbsize;
+import com.dba.services.DBAQueryService;
+import com.dba.utils.databaseconnection;
+
+@WebServlet("/refreshAllStats")
+public class RefreshStatsServlet extends HttpServlet {
+    private static final long serialVersionUID = 1L;
+
+    protected void doGet(HttpServletRequest request, HttpServletResponse response) 
+            throws ServletException, IOException {
+        
+        DBAQueryService service = new DBAQueryService();
+        // LinkedHashMap keeps the order of your 6 databases consistent
+        Map<String, dbsize> fixedStats = new LinkedHashMap<>();
+        
+        String[] dbTargets = {
+            "PR_MIDB", "PR_ARCHIVAL", "PR_SBISI", 
+            "PR_REPORTDB", "DR_MIDB", "DR_SBISI"
+        };
+        
+        StringBuilder statusMsg = new StringBuilder("Last Update: ");
+
+        for (String target : dbTargets) {
+            Connection conn = null;
+            try {
+                conn = databaseconnection.getConnection(target); 
+                if (conn != null) {
+                    dbsize size = service.getDatabaseSize(conn);
+                    fixedStats.put(target, size);
+                    statusMsg.append(target).append(" [OK] ");
+                } else {
+                    fixedStats.put(target, createEmpty());
+                }
+            } catch (Exception e) {
+                fixedStats.put(target, createEmpty());
+                e.printStackTrace();
+            } finally {
+                if (conn != null) {
+                    try { conn.close(); } catch (SQLException e) { e.printStackTrace(); }
+                }
+            }
+        }
+        
+        request.setAttribute("fixedStats", fixedStats);
+        request.setAttribute("status", statusMsg.toString());
+        request.getRequestDispatcher("index.jsp").forward(request, response);
+    }
+
+    private dbsize createEmpty() {
+        dbsize empty = new dbsize();
+        empty.setSizeTb(0.00);
+        return empty;
+    }
+}
