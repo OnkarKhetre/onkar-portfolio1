@@ -1,1010 +1,529 @@
 <%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8"%>
-<%@ page import="java.util.*, com.dba.models.*" %>
+<%@ page import="java.util.*" %>
+<%@ page import="com.dba.models.*" %>
+
 <%
-    // Retrieve objects set by StatServlet
-    dbsize sizeobj = (dbsize) session.getAttribute("sizeobj");
-    List<fra> fraobj = (List<fra>) session.getAttribute("fraobj");
-    List<instanceinfo> instanceobj = (List<instanceinfo>) session.getAttribute("instanceobj");
-    List<activesession> sessionobj = (List<activesession>) session.getAttribute("sessionobj");
-    List<archives> archivesobj = (List<archives>) session.getAttribute("archivesobj");
-    List<archivethread> threadobj = (List<archivethread>) session.getAttribute("threadobj");
-    List<tbs> tbsobj = (List<tbs>) session.getAttribute("tbsobj");
-    List<alert> alertobj = (List<alert>) session.getAttribute("alertobj");
-    List<ggview> ggviewobj = (List<ggview>) session.getAttribute("ggviewobj");
-    List<gghib> gghibobj = (List<gghib>) session.getAttribute("gghibobj");
-    List<ggmib> ggmibobj = (List<ggmib>) session.getAttribute("ggmibobj");
-    List<dbauser> userobj = (List<dbauser>) session.getAttribute("userobj");
-    List<taskitem> taskobj = (List<taskitem>) session.getAttribute("taskobj");
-    List<dbstats> dbstatsobj = (List<dbstats>) session.getAttribute("dbstatsobj");
+Map<String,Object> fullData = (Map<String,Object>) request.getAttribute("fulldata");
+String status = (String) request.getAttribute("status");
+if(status == null) status = "Disconnected";
 
-    String site = (String) session.getAttribute("site");
-    String target = (String) session.getAttribute("target");
-    String connStatus = (String) session.getAttribute("connStatus");
-    if (site == null) site = "PR";
-    if (target == null) target = "MIDB";
-    if (connStatus == null) connStatus = "Disconnected";
-    boolean connected = "Connected".equals(connStatus);
+String[] fixedTabs = {
+    "PR-MIDB",
+    "PR-HIDB",
+    "PR-REPORTDB",
+    "PR-SBISIDB",
+    "PR-ARCHIVALDB",
+    "DR-MIDB"
+};
+
+if(fullData == null && request.getAttribute("DBSizeData") == null){
 %>
+<script>
+    window.location.href = "refreshstats";
+</script>
+<%
+}
+%>
+
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DBA Monitor</title>
-    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --bg-deep:       #0a0e1a;
-            --bg-panel:      #0f1525;
-            --bg-card:       #141c30;
-            --bg-card2:      #111827;
-            --border:        #1e2d4a;
-            --border-glow:   #1a3a6e;
-            --accent-cyan:   #00d4ff;
-            --accent-gold:   #f39c12;
-            --accent-green:  #00e676;
-            --accent-red:    #ff4444;
-            --accent-purple: #a855f7;
-            --text-primary:  #e0eaf8;
-            --text-muted:    #6b85aa;
-            --text-dim:      #3d5275;
-            --hex-color:     rgba(0, 212, 255, 0.04);
-            --sidebar-w:     200px;
-            --header-h:      56px;
-            --tabs-h:        42px;
-        }
+<meta charset="UTF-8">
+<title>SBI DBA MONITOR</title>
 
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+<style>
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:"Segoe UI", Arial, sans-serif;
+}
 
-        body {
-            font-family: 'Exo 2', sans-serif;
-            background: var(--bg-deep);
-            color: var(--text-primary);
-            height: 100vh;
-            overflow: hidden;
-            display: flex;
-            flex-direction: column;
-        }
+body{
+    height:100vh;
+    background:#0f172a;
+    color:#fff;
+    overflow:hidden;
+}
 
-        /* ── HEX BACKGROUND ── */
-        body::before {
-            content: '';
-            position: fixed;
-            inset: 0;
-            background-image:
-                radial-gradient(ellipse 80% 60% at 50% 0%, rgba(0,80,160,0.18) 0%, transparent 70%),
-                url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='100'%3E%3Cpolygon points='28,2 54,16 54,44 28,58 2,44 2,16' fill='none' stroke='rgba(0,180,255,0.07)' stroke-width='1'/%3E%3Cpolygon points='28,52 54,66 54,94 28,108 2,94 2,66' fill='none' stroke='rgba(0,180,255,0.07)' stroke-width='1'/%3E%3C/svg%3E");
-            background-size: auto, 56px 100px;
-            pointer-events: none;
-            z-index: 0;
-        }
+.app{
+    display:flex;
+    height:100vh;
+    background:
+        linear-gradient(rgba(15,23,42,0.82), rgba(15,23,42,0.82)),
+        radial-gradient(circle at top right,#334155,#020617);
+}
 
-        /* ── HEADER ── */
-        #header {
-            position: relative;
-            z-index: 100;
-            height: var(--header-h);
-            background: linear-gradient(90deg, #08111f 0%, #0d1a30 50%, #08111f 100%);
-            border-bottom: 1px solid var(--border-glow);
-            display: flex;
-            align-items: center;
-            padding: 0 16px;
-            gap: 20px;
-            flex-shrink: 0;
-            box-shadow: 0 2px 20px rgba(0,212,255,0.08);
-        }
+/* Sidebar */
+.sidebar{
+    width:230px;
+    background:rgba(15,23,42,0.95);
+    border-right:1px solid #334155;
+    padding-top:15px;
+}
 
-        .header-logo {
-            font-family: 'Share Tech Mono', monospace;
-            font-size: 1.3rem;
-            color: var(--accent-cyan);
-            letter-spacing: 3px;
-            text-shadow: 0 0 16px rgba(0,212,255,0.6);
-            white-space: nowrap;
-        }
+.logo{
+    font-size:20px;
+    font-weight:bold;
+    padding:18px;
+    border-bottom:1px solid #334155;
+}
 
-        .header-spacer { flex: 1; }
+.menu-title{
+    padding:15px 18px 8px;
+    color:#cbd5e1;
+    font-size:13px;
+    font-weight:bold;
+}
 
-        .header-ctrl {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-size: 0.82rem;
-            color: var(--text-muted);
-        }
+.menu a{
+    display:block;
+    padding:11px 25px;
+    color:#e2e8f0;
+    text-decoration:none;
+    font-size:14px;
+}
 
-        .ctrl-label {
-            font-family: 'Share Tech Mono', monospace;
-            font-size: 0.75rem;
-            color: var(--text-dim);
-        }
+.menu a:hover,
+.menu a.active{
+    background:#38bdf8;
+    color:#020617;
+}
 
-        .ctrl-select {
-            background: #0d1828;
-            border: 1px solid var(--border-glow);
-            color: var(--accent-cyan);
-            font-family: 'Share Tech Mono', monospace;
-            font-size: 0.8rem;
-            padding: 4px 8px;
-            border-radius: 4px;
-            cursor: pointer;
-            outline: none;
-        }
+/* Main */
+.main{
+    flex:1;
+    display:flex;
+    flex-direction:column;
+    overflow:hidden;
+}
 
-        .btn-connect {
-            padding: 5px 18px;
-            background: linear-gradient(135deg, #0a4a80, #0066cc);
-            border: 1px solid var(--accent-cyan);
-            color: var(--accent-cyan);
-            font-family: 'Share Tech Mono', monospace;
-            font-size: 0.78rem;
-            border-radius: 4px;
-            cursor: pointer;
-            letter-spacing: 1px;
-            transition: all .2s;
-        }
-        .btn-connect:hover { background: linear-gradient(135deg, #0066cc, #0099ff); box-shadow: 0 0 12px rgba(0,212,255,0.4); }
+/* Topbar */
+.topbar{
+    height:65px;
+    background:rgba(30,41,59,0.95);
+    display:flex;
+    align-items:center;
+    gap:15px;
+    padding:0 20px;
+    border-bottom:1px solid #475569;
+}
 
-        .status-dot {
-            width: 9px; height: 9px;
-            border-radius: 50%;
-            background: <%= connected ? "var(--accent-green)" : "var(--accent-red)" %>;
-            box-shadow: 0 0 8px <%= connected ? "var(--accent-green)" : "var(--accent-red)" %>;
-            animation: pulse 2s infinite;
-        }
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+.topbar label{
+    font-weight:bold;
+    font-size:13px;
+}
 
-        .status-text {
-            font-family: 'Share Tech Mono', monospace;
-            font-size: 0.78rem;
-            color: <%= connected ? "var(--accent-green)" : "var(--accent-red)" %>;
-        }
+.topbar select,
+.topbar button{
+    padding:8px 12px;
+    border-radius:6px;
+    border:1px solid #94a3b8;
+}
 
-        .btn-refresh {
-            padding: 5px 14px;
-            background: #0d1828;
-            border: 1px solid var(--border);
-            color: var(--text-muted);
-            font-size: 0.78rem;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: all .2s;
-        }
-        .btn-refresh:hover { border-color: var(--accent-cyan); color: var(--accent-cyan); }
+.btn{
+    background:#38bdf8;
+    color:#020617;
+    font-weight:bold;
+    cursor:pointer;
+}
 
-        .auto-refresh-wrap { display: flex; align-items: center; gap: 6px; font-size: 0.78rem; }
+.status{
+    margin-left:auto;
+    font-weight:bold;
+}
 
-        /* ── LAYOUT ── */
-        #app {
-            position: relative;
-            z-index: 1;
-            display: flex;
-            flex: 1;
-            overflow: hidden;
-        }
+.dot{
+    display:inline-block;
+    width:10px;
+    height:10px;
+    border-radius:50%;
+    margin-right:6px;
+    background:<%= status.toLowerCase().contains("error") || status.toLowerCase().contains("disconnect") ? "#ef4444" : "#22c55e" %>;
+}
 
-        /* ── SIDEBAR ── */
-        #sidebar {
-            width: var(--sidebar-w);
-            background: linear-gradient(180deg, #090f1e 0%, #0b1422 100%);
-            border-right: 1px solid var(--border-glow);
-            display: flex;
-            flex-direction: column;
-            flex-shrink: 0;
-            overflow-y: auto;
-        }
+/* Tabs */
+.tabs{
+    display:flex;
+    background:rgba(30,41,59,0.85);
+    border-bottom:1px solid #475569;
+    overflow-x:auto;
+}
 
-        .sidebar-section {
-            padding: 10px 0 4px;
-        }
+.tab{
+    padding:14px 20px;
+    border-right:1px solid #475569;
+    cursor:pointer;
+    font-size:13px;
+    color:#e2e8f0;
+    white-space:nowrap;
+}
 
-        .sidebar-section-label {
-            padding: 4px 14px;
-            font-family: 'Share Tech Mono', monospace;
-            font-size: 0.65rem;
-            color: var(--text-dim);
-            letter-spacing: 2px;
-            text-transform: uppercase;
-        }
+.tab.active{
+    background:#2563eb;
+    color:#fff;
+    font-weight:bold;
+}
 
-        .nav-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 9px 14px;
-            cursor: pointer;
-            font-size: 0.82rem;
-            color: var(--text-muted);
-            border-left: 3px solid transparent;
-            transition: all .18s;
-            user-select: none;
-        }
-        .nav-item:hover { background: rgba(0,212,255,0.06); color: var(--text-primary); }
-        .nav-item.active {
-            background: rgba(0,212,255,0.1);
-            color: var(--accent-cyan);
-            border-left-color: var(--accent-cyan);
-        }
-        .nav-icon { font-size: 1rem; width: 18px; text-align: center; }
+/* Content */
+.content{
+    flex:1;
+    overflow:auto;
+    padding:25px;
+}
 
-        /* ── MAIN CONTENT ── */
-        #main {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
+.tab-content{
+    display:none;
+}
 
-        /* ── TAB BAR ── */
-        #tabbar {
-            height: var(--tabs-h);
-            background: #090f1e;
-            border-bottom: 1px solid var(--border);
-            display: flex;
-            align-items: flex-end;
-            padding: 0 12px;
-            gap: 2px;
-            overflow-x: auto;
-            flex-shrink: 0;
-        }
-        #tabbar::-webkit-scrollbar { height: 3px; }
-        #tabbar::-webkit-scrollbar-track { background: transparent; }
-        #tabbar::-webkit-scrollbar-thumb { background: var(--border-glow); border-radius: 2px; }
+.tab-content.active{
+    display:block;
+}
 
-        .tab {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            padding: 7px 14px 7px;
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            background: #0d1525;
-            border: 1px solid var(--border);
-            border-bottom: none;
-            border-radius: 5px 5px 0 0;
-            cursor: pointer;
-            white-space: nowrap;
-            transition: all .15s;
-            font-family: 'Share Tech Mono', monospace;
-        }
-        .tab:hover { color: var(--text-primary); background: #111c34; }
-        .tab.active { background: var(--bg-card); color: var(--accent-cyan); border-color: var(--border-glow); border-bottom-color: var(--bg-card); }
-        .tab-close { color: var(--text-dim); font-size: 0.9rem; line-height: 1; }
-        .tab-close:hover { color: var(--accent-red); }
+.grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:20px;
+}
 
-        /* ── CONTENT AREA ── */
-        #content {
-            flex: 1;
-            overflow-y: auto;
-            padding: 16px;
-            background: var(--bg-panel);
-        }
-        #content::-webkit-scrollbar { width: 5px; }
-        #content::-webkit-scrollbar-track { background: transparent; }
-        #content::-webkit-scrollbar-thumb { background: var(--border-glow); border-radius: 3px; }
+.card{
+    background:rgba(15,23,42,0.72);
+    border:1px solid #93c5fd;
+    border-radius:10px;
+    padding:18px;
+    box-shadow:0 0 12px rgba(147,197,253,0.35);
+}
 
-        /* ── SECTION VIEWS ── */
-        .view { display: none; animation: fadeIn .3s ease; }
-        .view.active { display: block; }
-        @keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
+.card.full{
+    grid-column:1/3;
+}
 
-        /* ── STATS GRID ── */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-            gap: 14px;
-        }
+.card h3{
+    margin-bottom:12px;
+    color:#fff;
+    font-size:17px;
+}
 
-        /* ── CARD ── */
-        .card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            overflow: hidden;
-            position: relative;
-        }
-        .card::before {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; right: 0;
-            height: 3px;
-            background: linear-gradient(90deg, var(--accent-gold), transparent);
-        }
-        .card.blue::before { background: linear-gradient(90deg, var(--accent-cyan), transparent); }
-        .card.green::before { background: linear-gradient(90deg, var(--accent-green), transparent); }
-        .card.purple::before { background: linear-gradient(90deg, var(--accent-purple), transparent); }
+.big-value{
+    text-align:center;
+    font-size:28px;
+    color:#67e8f9;
+    font-weight:bold;
+    padding:18px;
+}
 
-        .card-header {
-            padding: 10px 14px 8px;
-            border-bottom: 1px solid var(--border);
-            font-family: 'Share Tech Mono', monospace;
-            font-size: 0.78rem;
-            color: var(--accent-gold);
-            letter-spacing: 1px;
-            text-transform: uppercase;
-        }
-        .card.blue .card-header { color: var(--accent-cyan); }
-        .card.green .card-header { color: var(--accent-green); }
-        .card.purple .card-header { color: var(--accent-purple); }
+table{
+    width:100%;
+    border-collapse:collapse;
+    background:rgba(15,23,42,0.85);
+}
 
-        .card-body { padding: 12px 14px; }
+th{
+    background:#020617;
+    color:#fff;
+    padding:10px;
+    font-size:13px;
+    border:1px solid #64748b;
+}
 
-        /* DB Size big display */
-        .big-metric {
-            text-align: center;
-            padding: 20px;
-        }
-        .big-metric .value {
-            font-family: 'Share Tech Mono', monospace;
-            font-size: 2.4rem;
-            color: var(--accent-cyan);
-            text-shadow: 0 0 20px rgba(0,212,255,0.5);
-            letter-spacing: 2px;
-        }
-        .big-metric .label {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            margin-top: 4px;
-            letter-spacing: 2px;
-            text-transform: uppercase;
-        }
+td{
+    padding:9px;
+    border:1px solid #64748b;
+    text-align:center;
+    font-size:13px;
+}
 
-        /* ── TABLES ── */
-        .db-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.8rem;
-        }
-        .db-table thead tr {
-            background: #0d1828;
-        }
-        .db-table th {
-            padding: 7px 10px;
-            text-align: left;
-            font-family: 'Share Tech Mono', monospace;
-            font-size: 0.72rem;
-            color: var(--text-muted);
-            letter-spacing: 1px;
-            text-transform: uppercase;
-            border-bottom: 1px solid var(--border-glow);
-        }
-        .db-table td {
-            padding: 6px 10px;
-            border-bottom: 1px solid rgba(30,45,74,0.5);
-            color: var(--text-primary);
-        }
-        .db-table tbody tr:hover { background: rgba(0,212,255,0.04); }
-        .db-table tbody tr:last-child td { border-bottom: none; }
+tr:nth-child(even){
+    background:rgba(148,163,184,0.12);
+}
 
-        .td-bold { font-weight: 600; color: var(--accent-cyan); }
-        .td-num { font-family: 'Share Tech Mono', monospace; }
-        .td-warn { color: var(--accent-gold); }
-        .td-danger { color: var(--accent-red); font-weight: 700; }
-        .td-ok { color: var(--accent-green); }
+.empty{
+    text-align:center;
+    color:#cbd5e1;
+    padding:25px;
+}
 
-        /* usage bar */
-        .usage-bar-wrap { display: flex; align-items: center; gap: 8px; }
-        .usage-bar {
-            flex: 1; height: 6px;
-            background: #1a2a44;
-            border-radius: 3px;
-            overflow: hidden;
-        }
-        .usage-bar-fill {
-            height: 100%;
-            border-radius: 3px;
-            transition: width .4s;
-        }
-        .usage-bar-fill.ok     { background: var(--accent-green); }
-        .usage-bar-fill.warn   { background: var(--accent-gold); }
-        .usage-bar-fill.danger { background: var(--accent-red); box-shadow: 0 0 6px var(--accent-red); }
+.alert{
+    color:#fecaca;
+    background:rgba(127,29,29,0.6);
+    padding:12px;
+    border-radius:8px;
+    margin-bottom:15px;
+}
 
-        /* no-data */
-        .no-data {
-            text-align: center;
-            padding: 20px;
-            color: var(--text-dim);
-            font-family: 'Share Tech Mono', monospace;
-            font-size: 0.78rem;
-        }
-
-        /* ── ALERT BADGE ── */
-        .badge {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-size: 0.7rem;
-            font-weight: 600;
-        }
-        .badge-red { background: rgba(255,68,68,0.15); color: var(--accent-red); border: 1px solid rgba(255,68,68,0.3); }
-        .badge-gold { background: rgba(243,156,18,0.15); color: var(--accent-gold); border: 1px solid rgba(243,156,18,0.3); }
-        .badge-green { background: rgba(0,230,118,0.12); color: var(--accent-green); border: 1px solid rgba(0,230,118,0.25); }
-
-        /* ── FOOTER STATUS ── */
-        #footer {
-            position: relative;
-            z-index: 100;
-            height: 26px;
-            background: #060d19;
-            border-top: 1px solid var(--border);
-            display: flex;
-            align-items: center;
-            padding: 0 14px;
-            gap: 20px;
-            font-family: 'Share Tech Mono', monospace;
-            font-size: 0.7rem;
-            color: var(--text-dim);
-            flex-shrink: 0;
-        }
-        .footer-status { display: flex; align-items: center; gap: 5px; }
-
-        /* ── FORM CONTROLS ── */
-        .form-row { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
-        .form-label { font-size: 0.78rem; color: var(--text-muted); min-width: 80px; }
-        .form-input {
-            background: #0d1828;
-            border: 1px solid var(--border-glow);
-            color: var(--text-primary);
-            font-family: 'Share Tech Mono', monospace;
-            font-size: 0.8rem;
-            padding: 5px 10px;
-            border-radius: 4px;
-            outline: none;
-        }
-        .form-input:focus { border-color: var(--accent-cyan); }
-        .btn-action {
-            padding: 5px 16px;
-            background: rgba(0,212,255,0.08);
-            border: 1px solid var(--border-glow);
-            color: var(--accent-cyan);
-            font-family: 'Share Tech Mono', monospace;
-            font-size: 0.78rem;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: all .2s;
-        }
-        .btn-action:hover { background: rgba(0,212,255,0.15); box-shadow: 0 0 10px rgba(0,212,255,0.2); }
-
-        /* ── GG LAG DIFF ── */
-        .diff-zero { color: var(--accent-green); font-weight: 700; }
-        .diff-nonzero { color: var(--accent-red); font-weight: 700; }
-
-        /* Tablespace used% bar inline */
-        .pct-cell { display: flex; align-items: center; gap: 6px; }
-        .pct-text { font-family: 'Share Tech Mono', monospace; min-width: 42px; }
-    </style>
+@media(max-width:900px){
+    .grid{
+        grid-template-columns:1fr;
+    }
+    .card.full{
+        grid-column:1;
+    }
+}
+</style>
 </head>
+
 <body>
 
-<!-- ═══════════════════════════════════ HEADER ═══════════════════════════════════ -->
-<div id="header">
-    <div class="header-logo">⬡ DBA MONITOR</div>
-    <div class="header-spacer"></div>
-    <div class="header-ctrl">
-        <span class="ctrl-label">SITE</span>
-        <form method="post" action="StatServlet" id="connectForm" style="display:contents;">
-        <select class="ctrl-select" name="site" onchange="document.getElementById('connectForm').submit()">
-            <option value="PR"  <%= "PR".equals(site)  ? "selected" : "" %>>PR</option>
-            <option value="DR"  <%= "DR".equals(site)  ? "selected" : "" %>>DR</option>
-        </select>
-        <span class="ctrl-label">TARGET</span>
-        <select class="ctrl-select" name="target">
-            <option value="MIDB"     <%= "MIDB".equals(target)     ? "selected" : "" %>>MIDB</option>
-            <option value="HIDB"     <%= "HIDB".equals(target)     ? "selected" : "" %>>HIDB</option>
-            <option value="ReportDB" <%= "ReportDB".equals(target) ? "selected" : "" %>>ReportDB</option>
-            <option value="SBISI"    <%= "SBISI".equals(target)    ? "selected" : "" %>>SBISI</option>
-            <option value="ArchivalDB" <%= "ArchivalDB".equals(target) ? "selected" : "" %>>ArchivalDB</option>
-        </select>
-        <button type="submit" class="btn-connect">CONNECT</button>
-        </form>
+<div class="app">
 
-        <div class="status-dot"></div>
-        <span class="status-text"><%= connStatus %></span>
+    <div class="sidebar">
+        <div class="logo">DBA MONITOR</div>
 
-        <span class="ctrl-label" style="margin-left:10px;">Auto-Refresh:</span>
-        <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:.78rem;color:var(--text-muted);">
-            <input type="checkbox" id="autoRefreshToggle" style="accent-color:var(--accent-cyan);">
-        </label>
-        <form method="post" action="RefreshStatServlet" id="refreshForm" style="display:contents;">
-            <input type="hidden" name="site" value="<%= site %>">
-            <input type="hidden" name="target" value="<%= target %>">
-            <button type="submit" class="btn-refresh">↻ Refresh Now</button>
-        </form>
-    </div>
-</div>
+        <div class="menu">
+            <div class="menu-title">Database Health</div>
+            <a href="tablespaces.jsp">Tablespaces</a>
+            <a href="refreshstats" class="active">Stats</a>
+            <a href="alertlogs.jsp">Alert Logs</a>
+            <a href="gglag.jsp">GoldenGate Lag</a>
 
-<!-- ═══════════════════════════════════ APP ═══════════════════════════════════ -->
-<div id="app">
-
-    <!-- ── SIDEBAR ── -->
-    <div id="sidebar">
-        <div class="sidebar-section">
-            <div class="sidebar-section-label">Database</div>
-            <div class="nav-item active" onclick="showView('stats', this)">
-                <span class="nav-icon">📊</span> Database Health
-            </div>
-            <div class="nav-item" onclick="showView('tablespaces', this)">
-                <span class="nav-icon">🗄️</span> Tablespaces
-            </div>
-            <div class="nav-item" onclick="showView('stats2', this)">
-                <span class="nav-icon">📈</span> Stats
-            </div>
-            <div class="nav-item" onclick="showView('alerts', this)">
-                <span class="nav-icon">🔔</span> Alert Logs
-            </div>
-        </div>
-        <div class="sidebar-section">
-            <div class="sidebar-section-label">Replication</div>
-            <div class="nav-item" onclick="showView('gglag', this)">
-                <span class="nav-icon">🔗</span> Golden-Gate Lag
-            </div>
-        </div>
-        <div class="sidebar-section">
-            <div class="sidebar-section-label">Admin</div>
-            <div class="nav-item" onclick="showView('users', this)">
-                <span class="nav-icon">👥</span> User Management
-            </div>
-            <div class="nav-item" onclick="showView('users', this)">
-                <span class="nav-icon">🧑‍💼</span> All Users
-            </div>
-            <div class="nav-item" onclick="showView('tasks', this)">
-                <span class="nav-icon">⚙️</span> Task Manager
-            </div>
+            <div class="menu-title">User Management</div>
+            <a href="users.jsp">All Users</a>
+            <a href="sessions.jsp">Active Sessions</a>
         </div>
     </div>
 
-    <!-- ── MAIN ── -->
-    <div id="main">
+    <div class="main">
 
-        <!-- TAB BAR -->
-        <div id="tabbar">
-            <div class="tab active" id="tab-stats"       onclick="showView('stats','tab-stats')">Stats – <%= site %>-<%= target %> <span class="tab-close">×</span></div>
-            <div class="tab"        id="tab-tablespaces" onclick="showView('tablespaces','tab-tablespaces')">Tablespaces – <%= site %>-<%= target %> <span class="tab-close">×</span></div>
-            <div class="tab"        id="tab-stats2"      onclick="showView('stats2','tab-stats2')">DB Stats <span class="tab-close">×</span></div>
-            <div class="tab"        id="tab-alerts"      onclick="showView('alerts','tab-alerts')">Alert Logs <span class="tab-close">×</span></div>
-            <div class="tab"        id="tab-gglag"       onclick="showView('gglag','tab-gglag')">GG Lag <span class="tab-close">×</span></div>
-            <div class="tab"        id="tab-users"       onclick="showView('users','tab-users')">Users <span class="tab-close">×</span></div>
-            <div class="tab"        id="tab-tasks"       onclick="showView('tasks','tab-tasks')">Tasks <span class="tab-close">×</span></div>
+        <div class="topbar">
+            <form action="fetchstats" method="get">
+                <label>Site</label>
+                <select name="site">
+                    <option value="PR">PR</option>
+                    <option value="DR">DR</option>
+                </select>
+
+                <label>Target</label>
+                <select name="target">
+                    <option value="MIDB">MIDB</option>
+                    <option value="HIDB">HIDB</option>
+                    <option value="REPORTDB">REPORTDB</option>
+                    <option value="SBISIDB">SBISIDB</option>
+                    <option value="ARCHIVALDB">ARCHIVALDB</option>
+                </select>
+
+                <button class="btn" type="submit">Connect</button>
+            </form>
+
+            <div class="status">
+                <span class="dot"></span>
+                <%= status %>
+            </div>
+
+            <form action="refreshstats" method="get">
+                <button class="btn" type="submit">Refresh Now</button>
+            </form>
         </div>
 
-        <!-- CONTENT -->
-        <div id="content">
+        <div class="tabs">
+            <%
+            for(int i=0;i<fixedTabs.length;i++){
+            %>
+                <div class="tab <%= i==0 ? "active" : "" %>" onclick="openTab('<%= fixedTabs[i] %>', this)">
+                    Stats - <%= fixedTabs[i] %>
+                </div>
+            <%
+            }
+            %>
+        </div>
 
-            <!-- ══════════════ STATS VIEW ══════════════ -->
-            <div class="view active" id="view-stats">
-                <div class="stats-grid">
+        <div class="content">
 
-                    <!-- DB Total Size -->
-                    <div class="card blue">
-                        <div class="card-header">Total Database Size</div>
-                        <div class="card-body">
-                            <div class="big-metric">
-                                <div class="value">
-                                    <%= (sizeobj != null) ? String.format("%.6f TB", sizeobj.getSizeTb()) : "0.000000 TB" %>
-                                </div>
-                                <div class="label">Total Allocated Storage</div>
-                            </div>
-                        </div>
-                    </div>
+            <%
+            if(fullData != null){
+                for(int i=0;i<fixedTabs.length;i++){
+                    String key = fixedTabs[i];
+                    Map<String,Object> data = (Map<String,Object>) fullData.get(key);
 
-                    <!-- FRA Usage -->
+                    dbsize sizeobj = null;
+                    List<fra> fraobj = null;
+                    List<instanceinfo> instanceobj = null;
+                    List<activesession> sessionobj = null;
+                    List<archives> archiveobj = null;
+                    List<archivethread> threadobj = null;
+
+                    if(data != null){
+                        sizeobj = (dbsize)data.get("size");
+                        fraobj = (List<fra>)data.get("fra");
+                        instanceobj = (List<instanceinfo>)data.get("instanceinfo");
+                        sessionobj = (List<activesession>)data.get("activesession");
+                        archiveobj = (List<archives>)data.get("archives");
+                        threadobj = (List<archivethread>)data.get("thread");
+                    }
+            %>
+
+            <div id="<%= key %>" class="tab-content <%= i==0 ? "active" : "" %>">
+                <div class="grid">
+
                     <div class="card">
-                        <div class="card-header">Fast Recovery Area (FRA) Usage</div>
-                        <div class="card-body">
-                            <% if (fraobj != null && !fraobj.isEmpty()) { %>
-                            <table class="db-table">
-                                <thead><tr>
-                                    <th>NAME</th><th>LIMIT (MB)</th><th>USED (MB)</th><th>FREE %</th>
-                                </tr></thead>
-                                <tbody>
-                                <% for (fra f : fraobj) {
-                                       double pct = f.getPercentused();
-                                       String cls = pct > 80 ? "td-danger" : (pct > 60 ? "td-warn" : "td-ok");
-                                %>
-                                <tr>
-                                    <td class="td-bold"><%= f.getName() %></td>
-                                    <td class="td-num"><%= String.format("%.2f", (double) f.getSpacelimitmb()) %></td>
-                                    <td class="td-num"><%= String.format("%.2f", (double) f.getSpaceusedmb()) %></td>
-                                    <td>
-                                        <div class="pct-cell">
-                                            <div class="usage-bar">
-                                                <div class="usage-bar-fill <%= pct>80?"danger":(pct>60?"warn":"ok") %>"
-                                                     style="width:<%= Math.min(pct,100) %>%"></div>
-                                            </div>
-                                            <span class="pct-text <%= cls %>"><%= String.format("%.2f", pct) %>%</span>
-                                        </div>
-                                    </td>
-                                </tr>
-                                <% } %>
-                                </tbody>
-                            </table>
-                            <% } else { %>
-                            <div class="no-data">Connect to view FRA metrics</div>
-                            <% } %>
+                        <h3>Total Database Size</h3>
+                        <div class="big-value">
+                            <%= sizeobj != null ? sizeobj.getSizeTb() + " TB" : "0.00 TB" %>
                         </div>
                     </div>
 
-                    <!-- Instance Startup Times -->
-                    <div class="card green">
-                        <div class="card-header">Instance Startup Times</div>
-                        <div class="card-body">
-                            <% if (instanceobj != null && !instanceobj.isEmpty()) { %>
-                            <table class="db-table">
-                                <thead><tr><th>INSTANCE NAME</th><th>STARTUP TIME</th></tr></thead>
-                                <tbody>
-                                <% for (instanceinfo inst : instanceobj) { %>
-                                <tr>
-                                    <td class="td-bold"><%= inst.getInstancename() %></td>
-                                    <td class="td-num"><%= inst.getStartuptime() %></td>
-                                </tr>
-                                <% } %>
-                                </tbody>
-                            </table>
-                            <% } else { %>
-                            <div class="no-data">Connect to view instance info</div>
-                            <% } %>
-                        </div>
-                    </div>
-
-                    <!-- Active Sessions -->
-                    <div class="card blue">
-                        <div class="card-header">Active Sessions</div>
-                        <div class="card-body">
-                            <% if (sessionobj != null && !sessionobj.isEmpty()) { %>
-                            <table class="db-table">
-                                <thead><tr><th>INST ID</th><th>SESSION COUNT</th></tr></thead>
-                                <tbody>
-                                <% for (activesession s : sessionobj) { %>
-                                <tr>
-                                    <td class="td-num"><%= s.getInstid() %></td>
-                                    <td class="td-num td-bold"><%= s.getSessioncount() %></td>
-                                </tr>
-                                <% } %>
-                                </tbody>
-                            </table>
-                            <% } else { %>
-                            <div class="no-data">Connect to view sessions</div>
-                            <% } %>
-                        </div>
-                    </div>
-
-                    <!-- Archives -->
                     <div class="card">
-                        <div class="card-header">Archives</div>
-                        <div class="card-body">
-                            <% if (archivesobj != null && !archivesobj.isEmpty()) { %>
-                            <table class="db-table">
-                                <thead><tr><th>HOUR</th><th>GB</th><th>ARCHIVES</th></tr></thead>
-                                <tbody>
-                                <% for (archives a : archivesobj) { %>
-                                <tr>
-                                    <td class="td-num"><%= a.getHour() %></td>
-                                    <td class="td-num"><%= a.getGb() %></td>
-                                    <td class="td-num td-bold"><%= a.getArchives() %></td>
-                                </tr>
-                                <% } %>
-                                </tbody>
-                            </table>
-                            <% } else { %>
-                            <div class="no-data">Connect to view archive logs</div>
-                            <% } %>
-                        </div>
-                    </div>
-
-                    <!-- Thread Last Sequence -->
-                    <div class="card purple">
-                        <div class="card-header">Thread Last Sequence</div>
-                        <div class="card-body">
-                            <% if (threadobj != null && !threadobj.isEmpty()) { %>
-                            <table class="db-table">
-                                <thead><tr>
-                                    <th>THREAD</th><th>LAST SEQ RECEIVED</th><th>LAST SEQ APPLIED</th><th>DIFFERENCE</th>
-                                </tr></thead>
-                                <tbody>
-                                <% for (archivethread at : threadobj) {
-                                       int diff = at.getDifference();
-                                %>
-                                <tr>
-                                    <td class="td-num"><%= at.getThread() %></td>
-                                    <td class="td-num"><%= at.getLastsequencereceived() %></td>
-                                    <td class="td-num"><%= at.getLastsequenceapplied() %></td>
-                                    <td class="<%= diff == 0 ? "diff-zero" : "diff-nonzero" %> td-num"><%= diff %></td>
-                                </tr>
-                                <% } %>
-                                </tbody>
-                            </table>
-                            <% } else { %>
-                            <div class="no-data">Connect to view thread sequences</div>
-                            <% } %>
-                        </div>
-                    </div>
-
-                </div><!-- /stats-grid -->
-            </div><!-- /view-stats -->
-
-            <!-- ══════════════ TABLESPACES VIEW ══════════════ -->
-            <div class="view" id="view-tablespaces">
-                <div class="card blue" style="max-width:900px;">
-                    <div class="card-header">Tablespaces — <%= site %>-<%= target %></div>
-                    <div class="card-body" style="padding:0;">
-                        <% if (tbsobj != null && !tbsobj.isEmpty()) { %>
-                        <table class="db-table">
-                            <thead><tr>
-                                <th>NAME</th><th>FREE (gb)</th><th>USED (gb)</th><th>TOTAL (gb)</th><th>USED %</th>
-                            </tr></thead>
-                            <tbody>
-                            <% for (tbs t : tbsobj) {
-                                   double pct = t.getUsedpct();
-                                   String cls = pct > 90 ? "td-danger" : (pct > 70 ? "td-warn" : "td-ok");
+                        <h3>Fast Recovery Area Usage</h3>
+                        <table>
+                            <tr>
+                                <th>Name</th>
+                                <th>Limit MB</th>
+                                <th>Used MB</th>
+                                <th>Free %</th>
+                            </tr>
+                            <%
+                            if(fraobj != null && !fraobj.isEmpty()){
+                                for(fra f : fraobj){
                             %>
                             <tr>
-                                <td class="td-bold"><%= t.getName() %></td>
-                                <td class="td-num"><%= String.format("%.2f", t.getFreegb()) %></td>
-                                <td class="td-num"><%= String.format("%.2f", t.getUsedgb()) %></td>
-                                <td class="td-num"><%= String.format("%.2f", t.getTotalgb()) %></td>
-                                <td>
-                                    <div class="pct-cell">
-                                        <div class="usage-bar">
-                                            <div class="usage-bar-fill <%= pct>90?"danger":(pct>70?"warn":"ok") %>"
-                                                 style="width:<%= Math.min(pct,100) %>%"></div>
-                                        </div>
-                                        <span class="pct-text <%= cls %>"><%= String.format("%.2f", pct) %>%</span>
-                                    </div>
-                                </td>
+                                <td><%= f.getName() %></td>
+                                <td><%= f.getSpaceLimitmb() %></td>
+                                <td><%= f.getSpaceUsedmb() %></td>
+                                <td><%= f.getPercentused() %></td>
                             </tr>
+                            <%
+                                }
+                            }else{
+                            %>
+                            <tr><td colspan="4">No Data</td></tr>
                             <% } %>
-                            </tbody>
                         </table>
-                        <% } else { %>
-                        <div class="no-data" style="padding:30px;">Connect to view tablespace data</div>
-                        <% } %>
                     </div>
-                </div>
-            </div>
 
-            <!-- ══════════════ DB STATS VIEW ══════════════ -->
-            <div class="view" id="view-stats2">
-                <div class="card" style="max-width:900px;">
-                    <div class="card-header">Database Statistics</div>
-                    <div class="card-body" style="padding:0;">
-                        <% if (dbstatsobj != null && !dbstatsobj.isEmpty()) { %>
-                        <table class="db-table">
-                            <thead><tr><th>STAT NAME</th><th>VALUE</th><th>INST ID</th></tr></thead>
-                            <tbody>
-                            <% for (dbstats ds : dbstatsobj) { %>
+                    <div class="card">
+                        <h3>Instance Startup Times</h3>
+                        <table>
                             <tr>
-                                <td><%= ds.getStatname() %></td>
-                                <td class="td-num td-bold"><%= ds.getValue() %></td>
-                                <td class="td-num"><%= ds.getInstid() %></td>
+                                <th>Instance Name</th>
+                                <th>Startup Time</th>
                             </tr>
-                            <% } %>
-                            </tbody>
-                        </table>
-                        <% } else { %>
-                        <div class="no-data" style="padding:30px;">Connect to view DB statistics</div>
-                        <% } %>
-                    </div>
-                </div>
-            </div>
-
-            <!-- ══════════════ ALERT LOGS VIEW ══════════════ -->
-            <div class="view" id="view-alerts">
-                <div class="card" style="max-width:1000px;">
-                    <div class="card-header">Alert Logs</div>
-                    <div class="card-body" style="padding:0;">
-                        <% if (alertobj != null && !alertobj.isEmpty()) { %>
-                        <table class="db-table">
-                            <thead><tr>
-                                <th>TIMESTAMP</th><th>MESSAGE TEXT</th><th>INST ID</th>
-                            </tr></thead>
-                            <tbody>
-                            <% for (alert a : alertobj) { %>
+                            <%
+                            if(instanceobj != null && !instanceobj.isEmpty()){
+                                for(instanceinfo ins : instanceobj){
+                            %>
                             <tr>
-                                <td class="td-num" style="white-space:nowrap;"><%= a.getOriginatingTimestamp() %></td>
-                                <td style="font-size:.78rem; color:var(--accent-gold)"><%= a.getMessageText() %></td>
-                                <td class="td-num"><%= a.getInstid() %></td>
+                                <td><%= ins.getInstanceName() %></td>
+                                <td><%= ins.getStartupTime() %></td>
                             </tr>
+                            <%
+                                }
+                            }else{
+                            %>
+                            <tr><td colspan="2">No Data</td></tr>
                             <% } %>
-                            </tbody>
                         </table>
-                        <% } else { %>
-                        <div class="no-data" style="padding:30px;">No alert log entries found</div>
-                        <% } %>
-                    </div>
-                </div>
-            </div>
-
-            <!-- ══════════════ GG LAG VIEW ══════════════ -->
-            <div class="view" id="view-gglag">
-                <div class="stats-grid">
-                    <!-- HIB table -->
-                    <div class="card purple">
-                        <div class="card-header">GG HIB Stats</div>
-                        <div class="card-body" style="padding:0;">
-                            <% if (gghibobj != null && !gghibobj.isEmpty()) { %>
-                            <table class="db-table">
-                                <thead><tr><th>GROUP</th><th>LAG (SEC)</th><th>TIME</th><th>STATUS</th></tr></thead>
-                                <tbody>
-                                <% for (gghib g : gghibobj) { %>
-                                <tr>
-                                    <td class="td-bold"><%= g.getGroupname() %></td>
-                                    <td class="td-num <%= g.getLagseconds()>60?"td-danger":"td-ok" %>"><%= g.getLagseconds() %></td>
-                                    <td class="td-num"><%= g.getLagtime() %></td>
-                                    <td><span class="badge <%= "RUNNING".equals(g.getStatus())?"badge-green":"badge-red" %>"><%= g.getStatus() %></span></td>
-                                </tr>
-                                <% } %>
-                                </tbody>
-                            </table>
-                            <% } else { %>
-                            <div class="no-data">No HIB GG data</div>
-                            <% } %>
-                        </div>
                     </div>
 
-                    <!-- MIB table -->
-                    <div class="card purple">
-                        <div class="card-header">GG MIB Stats</div>
-                        <div class="card-body" style="padding:0;">
-                            <% if (ggmibobj != null && !ggmibobj.isEmpty()) { %>
-                            <table class="db-table">
-                                <thead><tr><th>GROUP</th><th>LAG (SEC)</th><th>TIME</th><th>STATUS</th></tr></thead>
-                                <tbody>
-                                <% for (ggmib g : ggmibobj) { %>
-                                <tr>
-                                    <td class="td-bold"><%= g.getGroupname() %></td>
-                                    <td class="td-num <%= g.getLagseconds()>60?"td-danger":"td-ok" %>"><%= g.getLagseconds() %></td>
-                                    <td class="td-num"><%= g.getLagtime() %></td>
-                                    <td><span class="badge <%= "RUNNING".equals(g.getStatus())?"badge-green":"badge-red" %>"><%= g.getStatus() %></span></td>
-                                </tr>
-                                <% } %>
-                                </tbody>
-                            </table>
-                            <% } else { %>
-                            <div class="no-data">No MIB GG data</div>
-                            <% } %>
-                        </div>
-                    </div>
-
-                    <!-- GG View -->
-                    <div class="card" style="grid-column:1/-1;">
-                        <div class="card-header">GG View — Replication Lag</div>
-                        <div class="card-body" style="padding:0;">
-                            <% if (ggviewobj != null && !ggviewobj.isEmpty()) { %>
-                            <table class="db-table">
-                                <thead><tr>
-                                    <th>GROUP</th><th>LAG AT CHKPT</th><th>TIME SINCE CHKPT</th><th>STATUS</th>
-                                </tr></thead>
-                                <tbody>
-                                <% for (ggview g : ggviewobj) { %>
-                                <tr>
-                                    <td class="td-bold"><%= g.getGroupname() %></td>
-                                    <td class="td-num"><%= g.getLagatcheckpoint() %></td>
-                                    <td class="td-num"><%= g.getTimesincecheckpoint() %></td>
-                                    <td><span class="badge <%= "RUNNING".equals(g.getStatus())?"badge-green":"badge-red" %>"><%= g.getStatus() %></span></td>
-                                </tr>
-                                <% } %>
-                                </tbody>
-                            </table>
-                            <% } else { %>
-                            <div class="no-data" style="padding:30px;">Connect to view GG lag data</div>
-                            <% } %>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- ══════════════ USERS VIEW ══════════════ -->
-            <div class="view" id="view-users">
-                <div class="card" style="max-width:900px;">
-                    <div class="card-header">DBA Users</div>
-                    <div class="card-body" style="padding:0;">
-                        <% if (userobj != null && !userobj.isEmpty()) { %>
-                        <table class="db-table">
-                            <thead><tr>
-                                <th>USERNAME</th><th>ACCOUNT STATUS</th><th>EXPIRY DATE</th><th>CREATED</th><th>PROFILE</th>
-                            </tr></thead>
-                            <tbody>
-                            <% for (dbauser u : userobj) { %>
+                    <div class="card">
+                        <h3>Active Sessions</h3>
+                        <table>
                             <tr>
-                                <td class="td-bold"><%= u.getUsername() %></td>
-                                <td>
-                                    <span class="badge <%= "OPEN".equals(u.getAccountstatus())?"badge-green":"badge-red" %>">
-                                        <%= u.getAccountstatus() %>
-                                    </span>
-                                </td>
-                                <td class="td-num"><%= u.getExpirydate() != null ? u.getExpirydate() : "—" %></td>
-                                <td class="td-num"><%= u.getCreated() %></td>
-                                <td><%= u.getProfile() %></td>
+                                <th>Inst ID</th>
+                                <th>Session Count</th>
                             </tr>
-                            <% } %>
-                            </tbody>
-                        </table>
-                        <% } else { %>
-                        <div class="no-data" style="padding:30px;">Connect to view user data</div>
-                        <% } %>
-                    </div>
-                </div>
-            </div>
-
-            <!-- ══════════════ TASKS VIEW ══════════════ -->
-            <div class="view" id="view-tasks">
-                <div class="card" style="max-width:900px;">
-                    <div class="card-header">Task Manager — DBA Jobs</div>
-                    <div class="card-body" style="padding:0;">
-                        <% if (taskobj != null && !taskobj.isEmpty()) { %>
-                        <table class="db-table">
-                            <thead><tr>
-                                <th>JOB NAME</th><th>STATUS</th><th>LAST RUN</th><th>NEXT RUN</th><th>OWNER</th>
-                            </tr></thead>
-                            <tbody>
-                            <% for (taskitem t : taskobj) { %>
+                            <%
+                            if(sessionobj != null && !sessionobj.isEmpty()){
+                                for(activesession s : sessionobj){
+                            %>
                             <tr>
-                                <td class="td-bold"><%= t.getJobname() %></td>
-                                <td>
-                                    <span class="badge <%= "RUNNING".equals(t.getStatus())?"badge-green":("FAILED".equals(t.getStatus())?"badge-red":"badge-gold") %>">
-                                        <%= t.getStatus() %>
-                                    </span>
-                                </td>
-                                <td class="td-num"><%= t.getLastrun() %></td>
-                                <td class="td-num"><%= t.getNextrun() %></td>
-                                <td><%= t.getOwner() %></td>
+                                <td><%= s.getInstId() %></td>
+                                <td><%= s.getSessionCount() %></td>
                             </tr>
+                            <%
+                                }
+                            }else{
+                            %>
+                            <tr><td colspan="2">No Data</td></tr>
                             <% } %>
-                            </tbody>
                         </table>
-                        <% } else { %>
-                        <div class="no-data" style="padding:30px;">No scheduled tasks found</div>
-                        <% } %>
                     </div>
+
+                    <div class="card full">
+                        <h3>Archives</h3>
+                        <table>
+                            <tr>
+                                <th>Hour</th>
+                                <th>GB</th>
+                                <th>Archives</th>
+                            </tr>
+                            <%
+                            if(archiveobj != null && !archiveobj.isEmpty()){
+                                for(archives a : archiveobj){
+                            %>
+                            <tr>
+                                <td><%= a.getHour() %></td>
+                                <td><%= a.getGb() %></td>
+                                <td><%= a.getArchives() %></td>
+                            </tr>
+                            <%
+                                }
+                            }else{
+                            %>
+                            <tr><td colspan="3">No Data</td></tr>
+                            <% } %>
+                        </table>
+                    </div>
+
+                    <div class="card full">
+                        <h3>Thread Last Sequence</h3>
+                        <table>
+                            <tr>
+                                <th>Thread</th>
+                                <th>Last Sequence Received</th>
+                                <th>Last Sequence Applied</th>
+                                <th>Difference</th>
+                            </tr>
+                            <%
+                            if(threadobj != null && !threadobj.isEmpty()){
+                                for(archivethread t : threadobj){
+                            %>
+                            <tr>
+                                <td><%= t.getThread() %></td>
+                                <td><%= t.getLastSequenceReceived() %></td>
+                                <td><%= t.getLastSequenceApplied() %></td>
+                                <td><%= t.getDifference() %></td>
+                            </tr>
+                            <%
+                                }
+                            }else{
+                            %>
+                            <tr><td colspan="4">No Data</td></tr>
+                            <% } %>
+                        </table>
+                    </div>
+
                 </div>
             </div>
 
-        </div><!-- /content -->
-    </div><!-- /main -->
-</div><!-- /app -->
+            <%
+                }
+            }else{
+            %>
+                <div class="empty">Loading database stats...</div>
+            <%
+            }
+            %>
 
-<!-- FOOTER -->
-<div id="footer">
-    <div class="footer-status">
-        <div class="status-dot" style="width:7px;height:7px;"></div>
-        <span><%= connStatus %></span>
+        </div>
     </div>
-    <span>Site: <strong style="color:var(--accent-cyan)"><%= site %></strong></span>
-    <span>Target: <strong style="color:var(--accent-cyan)"><%= target %></strong></span>
-    <span style="margin-left:auto; color:var(--text-dim);">DBA Monitor v2.0 · SBI</span>
 </div>
 
 <script>
-    // ── VIEW SWITCHING ──
-    function showView(viewId, trigger) {
-        // hide all views
-        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+function openTab(id, element){
+    var contents = document.getElementsByClassName("tab-content");
+    var tabs = document.getElementsByClassName("tab");
 
-        document.getElementById('view-' + viewId).classList.add('active');
-
-        // activate tab
-        const tabEl = document.getElementById('tab-' + viewId);
-        if (tabEl) tabEl.classList.add('active');
-
-        // activate nav item if clicked from sidebar
-        if (trigger && trigger.classList && trigger.classList.contains('nav-item')) {
-            trigger.classList.add('active');
-        }
+    for(var i=0;i<contents.length;i++){
+        contents[i].classList.remove("active");
     }
 
-    // ── AUTO REFRESH ──
-    let autoRefreshTimer = null;
-    document.getElementById('autoRefreshToggle').addEventListener('change', function() {
-        if (this.checked) {
-            autoRefreshTimer = setInterval(() => {
-                document.getElementById('refreshForm').submit();
-            }, 30000); // 30s
-        } else {
-            clearInterval(autoRefreshTimer);
-        }
-    });
+    for(var j=0;j<tabs.length;j++){
+        tabs[j].classList.remove("active");
+    }
+
+    document.getElementById(id).classList.add("active");
+    element.classList.add("active");
+}
 </script>
+
 </body>
 </html>
