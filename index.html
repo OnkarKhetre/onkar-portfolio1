@@ -1,112 +1,143 @@
 <%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8"%>
-<%-- THESE IMPORTS ARE CRITICAL TO FIX THE RED LINES --%>
 <%@ page import="com.dba.models.*" %>
 <%@ page import="java.util.*" %>
 
 <%
-    // Fetching the complex map from the Servlet
+    // 1. DATA FROM MANUAL CONNECT (fetchDashboard servlet)
+    dbsize sizeobj = (dbsize) request.getAttribute("sizeobj");
+    List<fra> fraData = (List<fra>) request.getAttribute("fraData");
+    instanceinfo instInfo = (instanceinfo) request.getAttribute("instInfo");
+    
+    // 2. DATA FROM REFRESH ALL (refreshAllStats servlet)
     Map<String, Map<String, Object>> fullData = (Map<String, Map<String, Object>>) request.getAttribute("fullData");
+    
     String status = (String) request.getAttribute("status");
-    if (status == null) status = "System Ready";
+    if (status == null) status = "System Connected";
 %>
 
 <!DOCTYPE html>
 <html>
 <head>
-    <title>SBI DBA Dashboard</title>
+    <title>SBI DBA MONITORING TOOL</title>
     <style>
-        :root { --primary: #2c3e50; --accent: #3498db; --success: #27ae60; --bg: #f4f7f9; }
-        body { margin: 0; font-family: 'Segoe UI', sans-serif; display: flex; height: 100vh; background: var(--bg); }
+        :root { --primary: #2c3e50; --accent: #3498db; --success: #27ae60; --dark: #1a252f; }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; display: flex; height: 100vh; background: #f4f7f9; }
         
-        /* Sidebar */
+        /* Sidebar Navigation */
         .sidebar { width: 220px; background: var(--primary); color: white; display: flex; flex-direction: column; }
-        .sidebar-header { padding: 20px; font-weight: bold; background: #1a252f; text-align: center; font-size: 1.1em; }
+        .sidebar-header { padding: 20px; font-weight: bold; background: var(--dark); text-align: center; }
         .nav-item { padding: 15px 25px; color: #bdc3c7; text-decoration: none; border-bottom: 1px solid #34495e; cursor: pointer; }
-        .nav-item.active { background: #34495e; color: white; border-left: 4px solid var(--accent); }
+        .nav-item:hover, .nav-item.active { background: #34495e; color: white; border-left: 4px solid var(--accent); }
 
-        /* Main Section */
         .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-        .tab-bar { background: white; border-bottom: 1px solid #ddd; display: flex; padding: 0 10px; }
-        .tab { padding: 12px 20px; cursor: pointer; border: none; background: none; font-weight: bold; color: #7f8c8d; border-bottom: 3px solid transparent; }
-        .tab.active { color: var(--accent); border-bottom: 3px solid var(--accent); }
 
-        .toolbar { padding: 10px 25px; background: #fff; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
-        .refresh-btn { background: var(--success); color: white; border: none; padding: 8px 18px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        /* Top Bar - Connection Controls */
+        .top-bar { background: white; padding: 10px 20px; border-bottom: 1px solid #ddd; display: flex; align-items: center; gap: 15px; }
+        .top-bar select, .top-bar button { padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        .btn-connect { background: var(--accent); color: white; border: none !important; cursor: pointer; font-weight: bold; padding: 8px 20px !important; }
+        .btn-refresh { background: var(--success); color: white; border: none !important; cursor: pointer; font-weight: bold; padding: 8px 15px !important; margin-left: auto; }
 
-        /* Content Grid */
-        .view-content { flex: 1; padding: 20px; overflow-y: auto; }
-        .report-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
-        .db-card { background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); padding: 15px; border-top: 5px solid var(--accent); }
-        .db-title { font-weight: bold; color: var(--primary); font-size: 1.1em; margin-bottom: 10px; display: block; border-bottom: 1px solid #eee; }
+        /* Tabs Style */
+        .tab-bar { background: #eee; border-bottom: 1px solid #ddd; display: flex; }
+        .tab { padding: 10px 20px; border: none; background: none; cursor: pointer; font-weight: bold; color: #666; }
+        .tab.active { background: white; color: var(--accent); border-top: 3px solid var(--accent); }
+
+        /* Content Area */
+        .content { flex: 1; padding: 20px; overflow-y: auto; }
+        .report-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-top: 20px; }
+        .db-card { background: white; padding: 15px; border-radius: 5px; border: 1px solid #ddd; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .db-title { font-weight: bold; color: var(--primary); border-bottom: 1px solid #eee; margin-bottom: 8px; display: block; }
         
-        .mini-table { width: 100%; font-size: 0.9em; border-collapse: collapse; }
-        .mini-table td { padding: 6px 0; border-bottom: 1px solid #f9f9f9; }
-        .label { color: #888; width: 60%; }
-        .val { text-align: right; font-weight: bold; color: #333; }
+        table { width: 100%; border-collapse: collapse; background: white; margin-top: 10px; }
+        th { background: #f8f9fa; padding: 10px; text-align: left; border: 1px solid #dee2e6; font-size: 13px; }
+        td { padding: 10px; border: 1px solid #dee2e6; font-size: 13px; }
     </style>
 </head>
 <body>
 
     <div class="sidebar">
         <div class="sidebar-header">SBI DBA TOOL</div>
-        <div class="nav-item active">FIXED DASHBOARD</div>
+        <div class="nav-item active">DASHBOARD</div>
         <div class="nav-item">TABLESPACES</div>
         <div class="nav-item">USER MGMT</div>
         <div class="nav-item">GG LAG</div>
     </div>
 
     <div class="main">
-        <div class="tab-bar">
-            <button class="tab active">Fixed 6 Dashboard</button>
-            <button class="tab">Details</button>
-        </div>
+        <div class="top-bar">
+            <form action="fetchDashboard" method="get" style="display: flex; gap: 10px; align-items: center; margin: 0;">
+                <label>SITE:</label>
+                <select name="site">
+                    <option value="PR">PR</option>
+                    <option value="DR">DR</option>
+                </select>
+                <label>TARGET:</label>
+                <select name="target">
+                    <option value="MIDB">MIDB</option>
+                    <option value="ARCHIVAL">ARCHIVAL</option>
+                    <option value="SBISI">SBISI</option>
+                    <option value="REPORTDB">REPORTDB</option>
+                </select>
+                <button type="submit" class="btn-connect">CONNECT</button>
+            </form>
 
-        <div class="toolbar">
-            <span style="font-size: 0.9em;">Status: <b style="color:var(--success)"><%= status %></b></span>
-            <form action="refreshAllStats" method="get" style="margin:0;">
-                <button type="submit" class="refresh-btn">🔄 REFRESH ALL 6 DATABASES</button>
+            <form action="refreshAllStats" method="get" style="margin: 0; margin-left: auto;">
+                <button type="submit" class="btn-refresh">🔄 REFRESH ALL 6</button>
             </form>
         </div>
 
-        <div class="view-content">
+        <div class="tab-bar">
+            <button class="tab active">Fixed Stats (WhatsApp)</button>
+            <button class="tab">Active Sessions</button>
+        </div>
+
+        <div class="content">
+            <% if (sizeobj != null) { %>
+                <div style="background: #fff; padding: 15px; border: 1px solid var(--accent); margin-bottom: 20px; border-radius: 5px;">
+                    <h3 style="margin: 0 0 10px 0; color: var(--accent);">Connected Database Result</h3>
+                    <strong>Total Size:</strong> <%= sizeobj.getSizeTb() %> TB | 
+                    <strong>Instance:</strong> <%= (instInfo != null) ? instInfo.getInstanceName() : "N/A" %>
+                </div>
+            <% } %>
+
             <div class="report-grid">
-                <% 
-                if (fullData != null) { 
+                <% if (fullData != null) { 
                     for (Map.Entry<String, Map<String, Object>> entry : fullData.entrySet()) { 
-                        String dbKey = entry.getKey();
-                        Map<String, Object> metrics = entry.getValue();
-                        
-                        // Casting specifically to match your models
-                        dbsize sz = (dbsize) metrics.get("size");
-                        instanceinfo info = (instanceinfo) metrics.get("instance");
-                        List<fra> fraList = (List<fra>) metrics.get("fra");
+                        Map<String, Object> m = entry.getValue();
+                        dbsize sz = (dbsize) m.get("size");
                 %>
                 <div class="db-card">
-                    <span class="db-title"><%= dbKey %></span>
-                    <table class="mini-table">
-                        <tr><td class="label">Total Size:</td><td class="val"><%= (sz != null) ? sz.getSizeTb() + " TB" : "0.00" %></td></tr>
-                        <tr><td class="label">Instance Name:</td><td class="val"><%= (info != null) ? info.getInstanceName() : "N/A" %></td></tr>
-                        <tr><td class="label">Active Sessions:</td><td class="val"><%= metrics.get("sessions") != null ? metrics.get("sessions") : "0" %></td></tr>
-                        <tr><td class="label">Last Thread Seq:</td><td class="val"><%= metrics.get("thread") != null ? metrics.get("thread") : "0" %></td></tr>
-                        <tr>
-                            <td class="label">FRA Usage:</td>
-                            <td class="val">
-                                <% if(fraList != null && !fraList.isEmpty()) { %>
-                                    <%= fraList.get(0).getPercentused() %>%
-                                <% } else { %> 0% <% } %>
-                            </td>
-                        </tr>
-                    </table>
-                </div>
-                <% 
-                    } 
-                } else { 
-                %>
-                    <div style="grid-column: span 2; text-align: center; padding: 50px; color: #999; background: white; border-radius: 8px;">
-                        No data loaded. Click the green <b>Refresh</b> button to fetch the hourly snapshot for WhatsApp.
+                    <span class="db-title"><%= entry.getKey() %></span>
+                    <div style="font-size: 1.5em; font-weight: bold;">
+                        <%= (sz != null) ? sz.getSizeTb() : "0.00" %> <small>TB</small>
                     </div>
+                    <div style="font-size: 0.8em; color: #666; margin-top: 5px;">
+                        Sessions: <%= m.get("sessions") %> | Seq: <%= m.get("thread") %>
+                    </div>
+                </div>
+                <% } } else { %>
+                    <p style="grid-column: span 3; text-align: center; color: #999;">Click "Refresh All" for hourly WhatsApp stats.</p>
                 <% } %>
             </div>
+            
+            <% if (fraData != null) { %>
+                <h3>FRA Usage Metrics</h3>
+                <table>
+                    <thead>
+                        <tr><th>Name</th><th>Limit (MB)</th><th>Used (MB)</th><th>Usage %</th></tr>
+                    </thead>
+                    <tbody>
+                        <% for (fra f : fraData) { %>
+                        <tr>
+                            <td><%= f.getName() %></td>
+                            <td><%= f.getSpacelimitmb() %></td>
+                            <td><%= f.getSpaceusedmb() %></td>
+                            <td style="font-weight:bold;"><%= f.getPercentused() %>%</td>
+                        </tr>
+                        <% } %>
+                    </tbody>
+                </table>
+            <% } %>
         </div>
     </div>
 </body>
