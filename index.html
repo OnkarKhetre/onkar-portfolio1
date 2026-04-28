@@ -1,5 +1,7 @@
 <%@ page language="java" contentType="text/html; charset=UTF-8" pageEncoding="UTF-8"%>
-<%@ page import="com.dba.models.*, java.util.*" %>
+<%-- THESE IMPORTS ARE CRITICAL TO FIX THE RED LINES --%>
+<%@ page import="com.dba.models.*" %>
+<%@ page import="java.util.*" %>
 
 <%
     // Fetching the complex map from the Servlet
@@ -11,43 +13,35 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>SBI DBA Dashboard - Control Panel</title>
+    <title>SBI DBA Dashboard</title>
     <style>
         :root { --primary: #2c3e50; --accent: #3498db; --success: #27ae60; --bg: #f4f7f9; }
-        body { margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; height: 100vh; background: var(--bg); }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; display: flex; height: 100vh; background: var(--bg); }
         
         /* Sidebar */
         .sidebar { width: 220px; background: var(--primary); color: white; display: flex; flex-direction: column; }
-        .sidebar-header { padding: 20px; font-weight: bold; background: #1a252f; text-align: center; font-size: 1.2em; }
-        .nav-item { padding: 15px 25px; color: #bdc3c7; text-decoration: none; border-bottom: 1px solid #34495e; cursor: pointer; transition: 0.3s; }
-        .nav-item:hover, .nav-item.active { background: #34495e; color: white; }
+        .sidebar-header { padding: 20px; font-weight: bold; background: #1a252f; text-align: center; font-size: 1.1em; }
+        .nav-item { padding: 15px 25px; color: #bdc3c7; text-decoration: none; border-bottom: 1px solid #34495e; cursor: pointer; }
+        .nav-item.active { background: #34495e; color: white; border-left: 4px solid var(--accent); }
 
-        /* Main Area */
+        /* Main Section */
         .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
-        
-        /* Tab Bar */
         .tab-bar { background: white; border-bottom: 1px solid #ddd; display: flex; padding: 0 10px; }
-        .tab { padding: 12px 20px; cursor: pointer; border: none; background: none; font-weight: bold; color: #7f8c8d; border-bottom: 3px solid transparent; outline: none; }
+        .tab { padding: 12px 20px; cursor: pointer; border: none; background: none; font-weight: bold; color: #7f8c8d; border-bottom: 3px solid transparent; }
         .tab.active { color: var(--accent); border-bottom: 3px solid var(--accent); }
 
-        /* Toolbar */
         .toolbar { padding: 10px 25px; background: #fff; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
         .refresh-btn { background: var(--success); color: white; border: none; padding: 8px 18px; border-radius: 4px; cursor: pointer; font-weight: bold; }
 
-        /* Content Frames */
-        .view-content { flex: 1; padding: 20px; overflow-y: auto; display: none; }
-        .view-content.active { display: block; }
-
-        /* Grid for 6 Fixed DBs */
+        /* Content Grid */
+        .view-content { flex: 1; padding: 20px; overflow-y: auto; }
         .report-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
         .db-card { background: white; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); padding: 15px; border-top: 5px solid var(--accent); }
-        .db-header { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 10px; }
-        .db-title { font-weight: bold; color: var(--primary); }
+        .db-title { font-weight: bold; color: var(--primary); font-size: 1.1em; margin-bottom: 10px; display: block; border-bottom: 1px solid #eee; }
         
-        /* Mini Tables for Card Data */
-        .mini-table { width: 100%; font-size: 0.85em; border-collapse: collapse; }
-        .mini-table td { padding: 4px 0; border-bottom: 1px solid #f9f9f9; }
-        .label { color: #888; font-weight: 500; }
+        .mini-table { width: 100%; font-size: 0.9em; border-collapse: collapse; }
+        .mini-table td { padding: 6px 0; border-bottom: 1px solid #f9f9f9; }
+        .label { color: #888; width: 60%; }
         .val { text-align: right; font-weight: bold; color: #333; }
     </style>
 </head>
@@ -55,92 +49,65 @@
 
     <div class="sidebar">
         <div class="sidebar-header">SBI DBA TOOL</div>
-        <div class="nav-item active" onclick="switchView('fixed-stats')">FIXED DASHBOARD</div>
-        <div class="nav-item" onclick="switchView('tablespaces')">TABLESPACES</div>
-        <div class="nav-item" onclick="switchView('users')">USER MANAGEMENT</div>
-        <div class="nav-item" onclick="switchView('gg-lag')">GOLDENGATE LAG</div>
+        <div class="nav-item active">FIXED DASHBOARD</div>
+        <div class="nav-item">TABLESPACES</div>
+        <div class="nav-item">USER MGMT</div>
+        <div class="nav-item">GG LAG</div>
     </div>
 
     <div class="main">
         <div class="tab-bar">
-            <button class="tab active" id="tab-fixed">Fixed 6 Dashboard</button>
-            <button class="tab" id="tab-dynamic">Detailed View</button>
+            <button class="tab active">Fixed 6 Dashboard</button>
+            <button class="tab">Details</button>
         </div>
 
         <div class="toolbar">
-            <span style="font-size: 0.9em; color: #666;">Status: <b style="color:var(--success)"><%= status %></b></span>
+            <span style="font-size: 0.9em;">Status: <b style="color:var(--success)"><%= status %></b></span>
             <form action="refreshAllStats" method="get" style="margin:0;">
                 <button type="submit" class="refresh-btn">🔄 REFRESH ALL 6 DATABASES</button>
             </form>
         </div>
 
-        <div id="fixed-stats" class="view-content active">
+        <div class="view-content">
             <div class="report-grid">
-                <% if (fullData != null) { 
-                    for (String key : fullData.keySet()) { 
-                        Map<String, Object> m = fullData.get(key);
-                        dbsize sz = (dbsize) m.get("size");
-                        instanceinfo info = (instanceinfo) m.get("instance");
-                        List<fra> fraList = (List<fra>) m.get("fra");
+                <% 
+                if (fullData != null) { 
+                    for (Map.Entry<String, Map<String, Object>> entry : fullData.entrySet()) { 
+                        String dbKey = entry.getKey();
+                        Map<String, Object> metrics = entry.getValue();
+                        
+                        // Casting specifically to match your models
+                        dbsize sz = (dbsize) metrics.get("size");
+                        instanceinfo info = (instanceinfo) metrics.get("instance");
+                        List<fra> fraList = (List<fra>) metrics.get("fra");
                 %>
                 <div class="db-card">
-                    <div class="db-header">
-                        <span class="db-title"><%= key %></span>
-                        <span style="font-size: 0.8em; color: var(--success);"><%= (info != null) ? info.getStatus() : "OFFLINE" %></span>
-                    </div>
+                    <span class="db-title"><%= dbKey %></span>
                     <table class="mini-table">
                         <tr><td class="label">Total Size:</td><td class="val"><%= (sz != null) ? sz.getSizeTb() + " TB" : "0.00" %></td></tr>
-                        <tr><td class="label">Instance:</td><td class="val"><%= (info != null) ? info.getInstanceName() : "N/A" %></td></tr>
-                        <tr><td class="label">Last Thread Seq:</td><td class="val"><%= m.get("thread") != null ? m.get("thread") : "0" %></td></tr>
+                        <tr><td class="label">Instance Name:</td><td class="val"><%= (info != null) ? info.getInstanceName() : "N/A" %></td></tr>
+                        <tr><td class="label">Active Sessions:</td><td class="val"><%= metrics.get("sessions") != null ? metrics.get("sessions") : "0" %></td></tr>
+                        <tr><td class="label">Last Thread Seq:</td><td class="val"><%= metrics.get("thread") != null ? metrics.get("thread") : "0" %></td></tr>
                         <tr>
-                            <td class="label">FRA %:</td>
+                            <td class="label">FRA Usage:</td>
                             <td class="val">
                                 <% if(fraList != null && !fraList.isEmpty()) { %>
                                     <%= fraList.get(0).getPercentused() %>%
                                 <% } else { %> 0% <% } %>
                             </td>
                         </tr>
-                        <tr><td class="label">Active Sessions:</td><td class="val"><%= m.get("sessions") != null ? m.get("sessions") : "0" %></td></tr>
                     </table>
                 </div>
-                <% } } else { %>
-                    <div style="grid-column: span 2; text-align: center; padding: 50px; color: #999;">
-                        Click "Refresh All" to load the 6-database hourly snapshot.
+                <% 
+                    } 
+                } else { 
+                %>
+                    <div style="grid-column: span 2; text-align: center; padding: 50px; color: #999; background: white; border-radius: 8px;">
+                        No data loaded. Click the green <b>Refresh</b> button to fetch the hourly snapshot for WhatsApp.
                     </div>
                 <% } %>
             </div>
         </div>
-
-        <div id="tablespaces" class="view-content">
-            <h2>Tablespace Monitoring</h2>
-            <p>Select a database from the sidebar to view specific tablespace details.</p>
-        </div>
-
-        <div id="users" class="view-content">
-            <h2>User Management</h2>
-            <p>Database user accounts and profile security status.</p>
-        </div>
     </div>
-
-    <script>
-        function switchView(viewId) {
-            // Update Sidebar UI
-            document.querySelectorAll('.nav-item').forEach(item => item.classList.remove('active'));
-            event.currentTarget.classList.add('active');
-
-            // Update Content Views
-            document.querySelectorAll('.view-content').forEach(view => view.classList.remove('active'));
-            document.getElementById(viewId).classList.add('active');
-            
-            // Update Tabs UI based on selection
-            if(viewId === 'fixed-stats') {
-                document.getElementById('tab-fixed').classList.add('active');
-                document.getElementById('tab-dynamic').classList.remove('active');
-            } else {
-                document.getElementById('tab-fixed').classList.remove('active');
-                document.getElementById('tab-dynamic').classList.add('active');
-            }
-        }
-    </script>
 </body>
 </html>
