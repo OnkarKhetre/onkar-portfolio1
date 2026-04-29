@@ -1,333 +1,46 @@
-<section class="content">
+function closeTab(event, tabId, btn){
+    event.stopPropagation();
 
-    <div class="content-inner" id="contentInner">
+    fetch("closetab?tabId=" + encodeURIComponent(tabId))
+        .then(function(){
+            var tab = btn.closest(".tab");
+            var content = document.getElementById(tabId);
+            var wasActive = tab.classList.contains("active");
 
-        <div class="page-heading" id="pageHeading">
-            <div>
-                <h2>DBA Monitoring Dashboard</h2>
-                <p>Open Stats, Tablespaces, Users and other pages as stacked tabs.</p>
-            </div>
+            if(tab){
+                tab.remove();
+            }
 
-            <div class="badge">
-                Current Selection: <b><%= html(selectedDb) %></b>
-            </div>
-        </div>
+            if(content){
+                content.remove();
+            }
 
-        <%
-            for(Map<String,String> tab : openTabs){
+            var remainingTabs = document.getElementsByClassName("tab");
 
-                String tabId = tab.get("id");
-                String tabType = tab.get("type");
-                String tabTitle = tab.get("title");
+            if(remainingTabs.length === 0){
+                var heading = document.getElementById("pageHeading");
+                var closed = document.getElementById("closedState");
 
-                Object tabData = session.getAttribute("tabData_" + tabId);
-        %>
+                if(heading){
+                    heading.style.display = "none";
+                }
 
-        <div id="<%= html(tabId) %>" class="tab-content <%= tabId.equals(activeTabId) ? "active" : "" %>">
+                if(closed){
+                    closed.style.display = "block";
+                }
 
-            <% if("stats".equals(tabType)){ %>
+                return;
+            }
 
-                <%
-                    Map<String,Object> data = null;
+            if(wasActive){
+                remainingTabs[0].classList.add("active");
 
-                    if(tabData instanceof Map){
-                        data = (Map<String,Object>) tabData;
-                    }
+                var firstTabId = remainingTabs[0].getAttribute("data-tab-id");
+                var firstContent = document.getElementById(firstTabId);
 
-                    dbsize sizeobj = null;
-                    List<fra> fraobj = null;
-                    List<instanceinfo> instanceobj = null;
-                    List<activesession> sessionobj = null;
-                    List<archives> archiveobj = null;
-                    List<archivethread> threadobj = null;
-
-                    if(data != null){
-                        try{ sizeobj = (dbsize) data.get("size"); }catch(Exception e){}
-                        try{ fraobj = (List<fra>) data.get("fra"); }catch(Exception e){}
-                        try{ instanceobj = (List<instanceinfo>) data.get("instanceinfo"); }catch(Exception e){}
-                        try{ sessionobj = (List<activesession>) data.get("activesession"); }catch(Exception e){}
-                        try{ archiveobj = (List<archives>) data.get("archives"); }catch(Exception e){}
-                        try{ threadobj = (List<archivethread>) data.get("thread"); }catch(Exception e){}
-                    }
-                %>
-
-                <div class="grid">
-
-                    <div class="card metric-db">
-                        <h3><span class="small-icon">💽</span>Total Database Size</h3>
-                        <div class="big-value">
-                            <%= sizeobj != null ? fmt(sizeobj.getSizeTb()) + " TB" : "0 TB" %>
-                        </div>
-                    </div>
-
-                    <div class="card metric-fra">
-                        <h3><span class="small-icon">⚡</span>Fast Recovery Area Usage</h3>
-
-                        <div class="table-wrap">
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Name</th>
-                                        <th>Limit MB</th>
-                                        <th>Used MB</th>
-                                        <th>Free %</th>
-                                    </tr>
-                                </thead>
-
-                                <tbody>
-                                <%
-                                    if(fraobj != null && !fraobj.isEmpty()){
-                                        for(fra f : fraobj){
-                                %>
-                                    <tr>
-                                        <td><%= html(f.getName()) %></td>
-                                        <td><%= fmt(f.getSpaceLimitmb()) %></td>
-                                        <td><%= fmt(f.getSpaceUsedmb()) %></td>
-                                        <td><%= fmt(f.getPercentused()) %></td>
-                                    </tr>
-                                <%
-                                        }
-                                    }else{
-                                %>
-                                    <tr>
-                                        <td colspan="4">No Data</td>
-                                    </tr>
-                                <% } %>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <div class="card metric-instance">
-                        <h3><span class="small-icon">🖥️</span>Instance Startup Times</h3>
-
-                        <div class="table-wrap">
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Instance Name</th>
-                                        <th>Startup Time</th>
-                                    </tr>
-                                </thead>
-
-                                <tbody>
-                                <%
-                                    if(instanceobj != null && !instanceobj.isEmpty()){
-                                        for(instanceinfo ins : instanceobj){
-                                %>
-                                    <tr>
-                                        <td><%= html(ins.getInstanceName()) %></td>
-                                        <td><%= html(ins.getStartupTime()) %></td>
-                                    </tr>
-                                <%
-                                        }
-                                    }else{
-                                %>
-                                    <tr>
-                                        <td colspan="2">No Data</td>
-                                    </tr>
-                                <% } %>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <div class="card metric-session">
-                        <h3><span class="small-icon">🟢</span>Active Sessions</h3>
-
-                        <div class="table-wrap">
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Inst ID</th>
-                                        <th>Session Count</th>
-                                    </tr>
-                                </thead>
-
-                                <tbody>
-                                <%
-                                    if(sessionobj != null && !sessionobj.isEmpty()){
-                                        for(activesession s : sessionobj){
-                                %>
-                                    <tr>
-                                        <td><%= html(s.getInstId()) %></td>
-                                        <td><%= fmt(s.getSessionCount()) %></td>
-                                    </tr>
-                                <%
-                                        }
-                                    }else{
-                                %>
-                                    <tr>
-                                        <td colspan="2">No Data</td>
-                                    </tr>
-                                <% } %>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <div class="card full metric-archive">
-                        <h3><span class="small-icon">📦</span>Archives</h3>
-
-                        <div class="table-wrap">
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Hour</th>
-                                        <th>GB</th>
-                                        <th>Archives</th>
-                                    </tr>
-                                </thead>
-
-                                <tbody>
-                                <%
-                                    if(archiveobj != null && !archiveobj.isEmpty()){
-                                        for(archives a : archiveobj){
-                                %>
-                                    <tr>
-                                        <td><%= html(a.getHour()) %></td>
-                                        <td><%= fmt(a.getGb()) %></td>
-                                        <td><%= fmt(a.getArchives()) %></td>
-                                    </tr>
-                                <%
-                                        }
-                                    }else{
-                                %>
-                                    <tr>
-                                        <td colspan="3">No Data</td>
-                                    </tr>
-                                <% } %>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <div class="card full metric-thread">
-                        <h3><span class="small-icon">🔗</span>Thread Last Sequence</h3>
-
-                        <div class="table-wrap">
-                            <table>
-                                <thead>
-                                    <tr>
-                                        <th>Thread</th>
-                                        <th>Last Sequence Received</th>
-                                        <th>Last Sequence Applied</th>
-                                        <th>Difference</th>
-                                    </tr>
-                                </thead>
-
-                                <tbody>
-                                <%
-                                    if(threadobj != null && !threadobj.isEmpty()){
-                                        for(archivethread t : threadobj){
-                                %>
-                                    <tr>
-                                        <td><%= html(t.getThread()) %></td>
-                                        <td><%= fmt(t.getLastSequenceReceived()) %></td>
-                                        <td><%= fmt(t.getLastSequenceApplied()) %></td>
-                                        <td><%= fmt(t.getDifference()) %></td>
-                                    </tr>
-                                <%
-                                        }
-                                    }else{
-                                %>
-                                    <tr>
-                                        <td colspan="4">No Data</td>
-                                    </tr>
-                                <% } %>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                </div>
-
-            <% }else if("tablespaces".equals(tabType)){ %>
-
-                <%
-                    List<tbs> tbsList = null;
-
-                    if(tabData instanceof List){
-                        tbsList = (List<tbs>) tabData;
-                    }
-                %>
-
-                <div class="card full metric-archive">
-                    <h3><span class="small-icon">💾</span><%= html(tabTitle) %></h3>
-
-                    <div class="table-wrap">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Name</th>
-                                    <th>Free GB</th>
-                                    <th>Used GB</th>
-                                    <th>Total GB</th>
-                                    <th>Used %</th>
-                                    <th>Usage</th>
-                                </tr>
-                            </thead>
-
-                            <tbody>
-                            <%
-                                if(tbsList != null && !tbsList.isEmpty()){
-                                    for(tbs ts : tbsList){
-
-                                        double pct = ts.getPercentused();
-
-                                        String usageClass = "usage-ok";
-                                        if(pct >= 85){
-                                            usageClass = "usage-danger";
-                                        }else if(pct >= 70){
-                                            usageClass = "usage-warning";
-                                        }
-
-                                        double barWidth = pct;
-                                        if(barWidth < 0) barWidth = 0;
-                                        if(barWidth > 100) barWidth = 100;
-                            %>
-                                <tr>
-                                    <td><%= html(ts.getName()) %></td>
-                                    <td><%= fmt(ts.getFreegb()) %></td>
-                                    <td><%= fmt(ts.getUsedgb()) %></td>
-                                    <td><%= fmt(ts.getTotalgb()) %></td>
-                                    <td><%= fmt(ts.getPercentused()) %>%</td>
-                                    <td>
-                                        <div class="usage-bar">
-                                            <span class="<%= usageClass %>" style="width:<%= barWidth %>%"></span>
-                                        </div>
-                                    </td>
-                                </tr>
-                            <%
-                                    }
-                                }else{
-                            %>
-                                <tr>
-                                    <td colspan="6">No tablespace data available.</td>
-                                </tr>
-                            <% } %>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-            <% } %>
-
-        </div>
-
-        <% } %>
-
-        <div class="closed-state" id="closedState" style="display:none;">
-            <h2>No tab open</h2>
-            <p>Open Stats, Tablespaces or Refresh Fixed Tabs again.</p>
-
-            <div class="quick-actions">
-                <a href="javascript:void(0)" onclick="goSelected('fetchstats')">Open Stats</a>
-                <a href="javascript:void(0)" onclick="goSelected('tablespaces')">Open Tablespaces</a>
-                <a href="refreshstats">Open Fixed Dashboard</a>
-            </div>
-        </div>
-
-    </div>
-
-</section>
+                if(firstContent){
+                    firstContent.classList.add("active");
+                }
+            }
+        });
+}
