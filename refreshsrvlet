@@ -1,45 +1,23 @@
-protected void doGet(HttpServletRequest request, HttpServletResponse response)
-        throws ServletException, IOException {
+function reloadGgLag(){
+    var boxes = document.getElementsByClassName("gg-lag-content");
 
-    HttpSession session = request.getSession();
-
-    DashboardTabUtil.addOrUpdateTab(
-            session,
-            TAB_ID,
-            "GG Lag",
-            "gglag",
-            true
-    );
-
-    DashboardTabUtil.setActiveTab(session, TAB_ID);
-
-    String reload = request.getParameter("reload");
-    String ajax = request.getParameter("ajax");
-
-    String currentStatus = (String) session.getAttribute("ggLagStatus");
-
-    boolean shouldStart =
-            "true".equalsIgnoreCase(reload)
-            || currentStatus == null
-            || "ERROR".equalsIgnoreCase(currentStatus);
-
-    if (shouldStart || !"RUNNING".equalsIgnoreCase(currentStatus)) {
-        startGgLagJob(session);
+    for(var i = 0; i < boxes.length; i++){
+        boxes[i].innerHTML =
+            "<div class='gg-loading-box'>" +
+            "<div class='loader'></div>" +
+            "<h3>Reloading GG Lag from PR-ARCHIVALDB...</h3>" +
+            "<p>This can take 4–5 minutes. You can continue using other tabs.</p>" +
+            "</div>";
     }
 
-    /*
-     * IMPORTANT:
-     * Ajax reload should NOT forward to index.jsp.
-     * It should only start background job and return OK.
-     */
-    if ("true".equalsIgnoreCase(ajax)) {
-        response.setContentType("text/plain");
-        response.getWriter().write("OK");
-        return;
-    }
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", "gglag?reload=true&ajax=true", true);
 
-    request.setAttribute("activePage", "gglag");
-    request.setAttribute("status", "GG Lag loading from PR-ARCHIVALDB");
+    xhr.onreadystatechange = function(){
+        if(xhr.readyState === 4){
+            pollGgLag();
+        }
+    };
 
-    request.getRequestDispatcher("index.jsp").forward(request, response);
+    xhr.send();
 }
