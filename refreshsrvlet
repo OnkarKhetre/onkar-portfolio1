@@ -1,56 +1,305 @@
-@WebServlet("/refreshstats")
-public class RefreshStatServlet extends HttpServlet {
+package com.dba.controller;
+
+import java.io.IOException;
+import java.text.DecimalFormat;
+import java.util.List;
+import java.util.Map;
+
+import com.dba.models.gghib;
+import com.dba.models.ggmib;
+
+import javax.servlet.ServletException;
+import javax.servlet.annotation.WebServlet;
+import javax.servlet.http.HttpServlet;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpSession;
+
+@WebServlet("/gglagstatus")
+public class GgLagStatusServlet extends HttpServlet {
     private static final long serialVersionUID = 1L;
 
-    private static final String[][] FIXED_DBS = {
-        {"PR", "MIDB"},
-        {"PR", "HIDB"},
-        {"PR", "REPORTDB"},
-        {"PR", "SBISIDB"},
-        {"PR", "ARCHIVALDB"},
-        {"DR", "MIDB"}
-    };
-
+    @SuppressWarnings("unchecked")
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
 
-        dbaqueryservice service = new dbaqueryservice();
+        response.setContentType("text/html;charset=UTF-8");
 
-        Map<String, Object> dashboardData = new LinkedHashMap<>();
+        HttpSession session = request.getSession();
 
-        for (String[] db : FIXED_DBS) {
-            String site = db[0];
-            String target = db[1];
-            String key = site + "-" + target;
+        String status = (String) session.getAttribute("ggLagStatus");
 
-            Map<String, Object> stats = new HashMap<>();
-            Connection conn = null;
-
-            try {
-                conn = databaseconnection.getconnection(site, target);
-
-                stats.put("size", service.getdbsize(conn));
-                stats.put("fra", service.getfrausage(conn));
-                stats.put("instanceinfo", service.getinstancestats(conn));
-                stats.put("activesession", service.getactivesession(conn));
-                stats.put("archives", service.getarchives(conn));
-                stats.put("thread", service.getarchivethread(conn));
-                stats.put("status", "OK");
-
-            } catch (Exception e) {
-                e.printStackTrace();
-                stats.put("status", "ERROR");
-                stats.put("error", e.getMessage());
-            } finally {
-                databaseconnection.closeconnection(conn);
-            }
-
-            dashboardData.put(key, stats);
+        if (status == null) {
+            status = "NOT_STARTED";
         }
 
-        request.setAttribute("fulldata", dashboardData);
-        request.getRequestDispatcher("index.jsp").forward(request, response);
+        if ("RUNNING".equalsIgnoreCase(status)) {
+
+            Long startedAt = (Long) session.getAttribute("ggLagStartedAt");
+            long elapsed = 0;
+
+            if (startedAt != null) {
+                elapsed = (System.currentTimeMillis() - startedAt.longValue()) / 1000;
+            }
+
+            response.getWriter().write(
+                "<div data-gg-status='RUNNING' class='gg-loading-box'>" +
+                    "<div class='loader'></div>" +
+                    "<h3>Loading GG Lag from PR-ARCHIVALDB...</h3>" +
+                    "<p>This query can take 4–5 minutes. You can continue using Stats, Tablespaces or Users while this loads.</p>" +
+                    "<p><b>Elapsed:</b> " + elapsed + " seconds</p>" +
+                "</div>"
+            );
+
+            return;
+        }
+
+        if ("ERROR".equalsIgnoreCase(status)) {
+            String error = (String) session.getAttribute("ggLagError");
+
+            response.getWriter().write(
+                "<div data-gg-status='ERROR' class='gg-error-box'>" +
+                    "<h3>GG Lag loading failed</h3>" +
+                    "<p>" + esc(error) + "</p>" +
+                    "<a class='mini-btn' href='gglag?reload=true'>Try Again</a>" +
+                "</div>"
+            );
+
+            return;
+        }
+
+        Map<String, Object> data = (Map<String, Object>) session.getAttribute("ggLagData");
+
+        if (data == null) {
+            response.getWriter().write(
+                "<div data-gg-status='NOT_STARTED' class='gg-loading-box'>" +
+                    "<h3>GG Lag not loaded yet</h3>" +
+                    "<a class='mini-btn' href='gglag?reload=true'>Load GG Lag</a>" +
+                "</div>"
+            );
+            return;
+        }
+
+        List<ggmib> mibLag = null;
+        List<gghib> hibLag = null;
+
+        try {
+            mibLag = (List<ggmib>) data.get("mib");
+        } catch (Exception e) {}
+
+        try {
+            hibLag = (List<gghib>) data.get("hib");
+        } catch (Exception e) {}
+
+        Object loadedAt = data.get("loadedAt");
+
+        StringBuilder html = new StringBuilder();
+
+        html.append("<div data-gg-status='DONE'>");
+
+        html.append("<div class='gg-toolbar'>");
+        html.append("<div>");
+        html.append("<b>Source:</b> PR-ARCHIVALDB only");
+        if (loadedAt != null) {
+            html.append(" &nbsp; | &nbsp; <b>Loaded:</b> ").append(esc(loadedAt));
+        }
+        html.append("</div>");
+        html.append("<a class='mini-btn' href='gglag?reload=true'>↻ Reload GG Lag</a>");
+        html.append("</div>");
+
+        html.append("<div class='gg-grid'>");
+
+        html.append("<div class='card full metric-thread'>");
+        html.append("<h3><span class='small-icon'>🔁</span>GG Lag - MIB</h3>");
+        appendMibTable(html, mibLag);
+        html.append("</div>");
+
+        html.append("<div class='card full metric-thread'>");
+        html.append("<h3><span class='small-icon'>🔁</span>GG Lag - HIB</h3>");
+        appendHibTable(html, hibLag);
+        html.append("</div>");
+
+        html.append("</div>");
+        html.append("</div>");
+
+        response.getWriter().write(html.toString());
     }
 
-    protected void doPost(HttpServletRequest request, HttpServletResponse response)
-            throws ServletException
+    private void appendMibTable(StringBuilder html, List<ggmib> list) {
+
+        html.append("<div class='table-wrap'>");
+        html.append("<table>");
+        html.append("<thead>");
+        html.append("<tr>");
+        html.append("<th>DB Name</th>");
+        html.append("<th>Created</th>");
+        html.append("<th>Lag</th>");
+        html.append("<th>Status</th>");
+        html.append("</tr>");
+        html.append("</thead>");
+        html.append("<tbody>");
+
+        if (list != null && !list.isEmpty()) {
+            for (ggmib g : list) {
+                appendLagRow(html, g.getDbname(), g.getCreated(), g.getLag());
+            }
+        } else {
+            html.append("<tr><td colspan='4'>No MIB GG lag data available.</td></tr>");
+        }
+
+        html.append("</tbody>");
+        html.append("</table>");
+        html.append("</div>");
+    }
+
+    private void appendHibTable(StringBuilder html, List<gghib> list) {
+
+        html.append("<div class='table-wrap'>");
+        html.append("<table>");
+        html.append("<thead>");
+        html.append("<tr>");
+        html.append("<th>DB Name</th>");
+        html.append("<th>Created</th>");
+        html.append("<th>Lag</th>");
+        html.append("<th>Status</th>");
+        html.append("</tr>");
+        html.append("</thead>");
+        html.append("<tbody>");
+
+        if (list != null && !list.isEmpty()) {
+            for (gghib g : list) {
+                appendLagRow(html, g.getDbname(), g.getCreated(), g.getLag());
+            }
+        } else {
+            html.append("<tr><td colspan='4'>No HIB GG lag data available.</td></tr>");
+        }
+
+        html.append("</tbody>");
+        html.append("</table>");
+        html.append("</div>");
+    }
+
+    private void appendLagRow(StringBuilder html, Object dbName, Object created, Object lag) {
+
+        double minutes = parseLagMinutes(lag);
+
+        String statusClass = "lag-unknown";
+        String statusText = "Unknown";
+
+        if (minutes >= 0) {
+            if (minutes <= 15) {
+                statusClass = "lag-ok";
+                statusText = "OK";
+            } else if (minutes <= 30) {
+                statusClass = "lag-warning";
+                statusText = "Warning";
+            } else {
+                statusClass = "lag-danger";
+                statusText = "Critical";
+            }
+        }
+
+        html.append("<tr>");
+        html.append("<td>").append(esc(dbName)).append("</td>");
+        html.append("<td>").append(esc(created)).append("</td>");
+        html.append("<td>");
+        html.append("<b>").append(formatLag(minutes, lag)).append("</b>");
+        html.append("</td>");
+        html.append("<td>");
+        html.append("<span class='lag-pill ").append(statusClass).append("'>");
+        html.append(statusText);
+        html.append("</span>");
+        html.append("</td>");
+        html.append("</tr>");
+    }
+
+    private double parseLagMinutes(Object lagObj) {
+
+        if (lagObj == null) {
+            return -1;
+        }
+
+        String lag = String.valueOf(lagObj).trim();
+
+        if (lag.equals("") || lag.equalsIgnoreCase("null")) {
+            return -1;
+        }
+
+        try {
+            return Double.parseDouble(lag.replace(",", ""));
+        } catch (Exception e) {}
+
+        /*
+         * Handles values like:
+         * 0:12:10
+         * 1 02:15:00
+         * 127850 0:33:12.27024
+         */
+        try {
+            if (lag.contains(":")) {
+                String[] parts = lag.split("\\s+");
+
+                double days = 0;
+                String timePart = lag;
+
+                if (parts.length == 2) {
+                    days = Double.parseDouble(parts[0]);
+                    timePart = parts[1];
+                }
+
+                String[] time = timePart.split(":");
+
+                double hours = 0;
+                double minutes = 0;
+                double seconds = 0;
+
+                if (time.length > 0) hours = Double.parseDouble(time[0]);
+                if (time.length > 1) minutes = Double.parseDouble(time[1]);
+                if (time.length > 2) seconds = Double.parseDouble(time[2]);
+
+                return (days * 1440) + (hours * 60) + minutes + (seconds / 60);
+            }
+        } catch (Exception e) {}
+
+        return -1;
+    }
+
+    private String formatLag(double minutes, Object original) {
+
+        if (minutes < 0) {
+            return esc(original);
+        }
+
+        DecimalFormat df = new DecimalFormat("#,##0.##");
+
+        if (minutes < 60) {
+            return df.format(minutes) + " min";
+        }
+
+        if (minutes < 1440) {
+            long hrs = (long) (minutes / 60);
+            long mins = (long) (minutes % 60);
+            return hrs + "h " + mins + "m";
+        }
+
+        long days = (long) (minutes / 1440);
+        long hrs = (long) ((minutes % 1440) / 60);
+
+        return days + "d " + hrs + "h";
+    }
+
+    private String esc(Object value) {
+
+        if (value == null) {
+            return "";
+        }
+
+        String s = String.valueOf(value);
+
+        return s.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
+    }
+}
