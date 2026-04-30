@@ -1,46 +1,104 @@
-function closeTab(event, tabId, btn){
-    event.stopPropagation();
+.gg-info-box{
+    background:var(--surface-soft);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:12px 14px;
+    margin-bottom:15px;
+    color:var(--muted);
+    font-size:14px;
+    font-weight:700;
+}
 
-    fetch("closetab?tabId=" + encodeURIComponent(tabId))
-        .then(function(){
-            var tab = btn.closest(".tab");
-            var content = document.getElementById(tabId);
-            var wasActive = tab.classList.contains("active");
+.gg-loading-box,
+.gg-error-box{
+    min-height:170px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    text-align:center;
+    background:var(--surface);
+    border:1px dashed var(--line);
+    border-radius:16px;
+    padding:24px;
+}
 
-            if(tab){
-                tab.remove();
-            }
+.gg-loading-box p,
+.gg-error-box p{
+    color:var(--muted);
+}
 
-            if(content){
-                content.remove();
-            }
+.loader{
+    width:38px;
+    height:38px;
+    border-radius:50%;
+    border:4px solid var(--surface-soft);
+    border-top-color:var(--accent);
+    animation:spin 1s linear infinite;
+}
 
-            var remainingTabs = document.getElementsByClassName("tab");
+@keyframes spin{
+    to{
+        transform:rotate(360deg);
+    }
+}
 
-            if(remainingTabs.length === 0){
-                var heading = document.getElementById("pageHeading");
-                var closed = document.getElementById("closedState");
+.gg-toolbar{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    margin-bottom:15px;
+    background:var(--surface-soft);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:12px 14px;
+    color:var(--muted);
+    font-size:14px;
+}
 
-                if(heading){
-                    heading.style.display = "none";
-                }
+.mini-btn{
+    display:inline-block;
+    text-decoration:none;
+    background:linear-gradient(135deg,var(--active),var(--accent));
+    color:white;
+    padding:8px 13px;
+    border-radius:10px;
+    font-weight:800;
+    font-size:13px;
+}
 
-                if(closed){
-                    closed.style.display = "block";
-                }
+.gg-grid{
+    display:grid;
+    grid-template-columns:1fr;
+    gap:18px;
+}
 
-                return;
-            }
+.lag-pill{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    min-width:82px;
+    padding:6px 10px;
+    border-radius:999px;
+    color:white;
+    font-weight:900;
+    font-size:12px;
+}
 
-            if(wasActive){
-                remainingTabs[0].classList.add("active");
+.lag-ok{
+    background:var(--green);
+}
 
-                var firstTabId = remainingTabs[0].getAttribute("data-tab-id");
-                var firstContent = document.getElementById(firstTabId);
+.lag-warning{
+    background:var(--orange);
+}
 
-                if(firstContent){
-                    firstContent.classList.add("active");
-                }
-            }
-        });
+.lag-danger{
+    background:var(--bad);
+}
+
+.lag-unknown{
+    background:var(--muted);
 }
