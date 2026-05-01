@@ -34,3 +34,9 @@ CREATE TABLE IF NOT EXISTS login_audit (
     session_id VARCHAR(120),
     remarks VARCHAR(255)
 );
+
+
+INSERT INTO app_users
+(username, password_hash, role, display_name, active)
+VALUES
+('admin', CONCAT('SHA256:', SHA2('admin123', 256)), 'ADMIN', 'Administrator', 'Y');
