@@ -1,46 +1,93 @@
 package com.dba.service;
 
-import java.security.MessageDigest;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 
-public class PasswordUtil {
+import com.dba.connection.MysqlConnection;
+import com.dba.models.loginuser;
 
-    public static boolean passwordMatches(String enteredPassword, String storedPasswordHash) throws Exception {
+public class UserService {
 
-        if (enteredPassword == null || storedPasswordHash == null) {
-            return false;
+    /*
+     * Emergency login works ONLY when MySQL login check fails due to DB/connection issue.
+     * Change password before final deployment.
+     */
+    private static final String EMERGENCY_USERNAME = "emergency";
+    private static final String EMERGENCY_PASSWORD = "Emergency@123";
+
+    public loginuser validateUserFromDatabase(String username, String password) throws Exception {
+
+        if (username == null || password == null) {
+            return null;
         }
 
-        storedPasswordHash = storedPasswordHash.trim();
+        String sql =
+                "SELECT id, username, password_hash, role, display_name, active " +
+                "FROM app_users " +
+                "WHERE username = ? AND active = 'Y'";
 
-        if (storedPasswordHash.startsWith("SHA256:")) {
-            String hashOnly = storedPasswordHash.substring("SHA256:".length());
-            return sha256(enteredPassword).equalsIgnoreCase(hashOnly);
-        }
+        Connection conn = null;
+        PreparedStatement ps = null;
+        ResultSet rs = null;
 
-        /*
-         * Fallback if someone stores plain password.
-         * For production, use SHA256 format.
-         */
-        return enteredPassword.equals(storedPasswordHash);
-    }
+        try {
+            conn = MysqlConnection.getConnection();
 
-    public static String sha256(String value) throws Exception {
+            ps = conn.prepareStatement(sql);
+            ps.setString(1, username.trim());
 
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        byte[] encodedHash = digest.digest(value.getBytes("UTF-8"));
+            rs = ps.executeQuery();
 
-        StringBuilder hexString = new StringBuilder();
+            if (rs.next()) {
 
-        for (byte b : encodedHash) {
-            String hex = Integer.toHexString(0xff & b);
+                String storedPasswordHash = rs.getString("password_hash");
 
-            if (hex.length() == 1) {
-                hexString.append('0');
+                if (PasswordUtil.passwordMatches(password, storedPasswordHash)) {
+
+                    loginuser user = new loginuser();
+
+                    user.setId(rs.getInt("id"));
+                    user.setUsername(rs.getString("username"));
+                    user.setRole(rs.getString("role"));
+                    user.setDisplayName(rs.getString("display_name"));
+                    user.setActive(rs.getString("active"));
+                    user.setEmergencyLogin(false);
+
+                    return user;
+                }
             }
 
-            hexString.append(hex);
+        } finally {
+            if (rs != null) try { rs.close(); } catch (Exception e) {}
+            if (ps != null) try { ps.close(); } catch (Exception e) {}
+            MysqlConnection.closeConnection(conn);
         }
 
-        return hexString.toString();
+        return null;
+    }
+
+    public loginuser validateEmergencyUser(String username, String password) {
+
+        if (username == null || password == null) {
+            return null;
+        }
+
+        if (EMERGENCY_USERNAME.equals(username.trim())
+                && EMERGENCY_PASSWORD.equals(password)) {
+
+            loginuser user = new loginuser();
+
+            user.setId(-1);
+            user.setUsername(EMERGENCY_USERNAME);
+            user.setRole("ADMIN");
+            user.setDisplayName("Emergency Admin");
+            user.setActive("Y");
+            user.setEmergencyLogin(true);
+
+            return user;
+        }
+
+        return null;
     }
 }
