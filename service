@@ -1,0 +1,46 @@
+package com.dba.service;
+
+import java.security.MessageDigest;
+
+public class PasswordUtil {
+
+    public static boolean passwordMatches(String enteredPassword, String storedPasswordHash) throws Exception {
+
+        if (enteredPassword == null || storedPasswordHash == null) {
+            return false;
+        }
+
+        storedPasswordHash = storedPasswordHash.trim();
+
+        if (storedPasswordHash.startsWith("SHA256:")) {
+            String hashOnly = storedPasswordHash.substring("SHA256:".length());
+            return sha256(enteredPassword).equalsIgnoreCase(hashOnly);
+        }
+
+        /*
+         * Fallback if someone stores plain password.
+         * For production, use SHA256 format.
+         */
+        return enteredPassword.equals(storedPasswordHash);
+    }
+
+    public static String sha256(String value) throws Exception {
+
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] encodedHash = digest.digest(value.getBytes("UTF-8"));
+
+        StringBuilder hexString = new StringBuilder();
+
+        for (byte b : encodedHash) {
+            String hex = Integer.toHexString(0xff & b);
+
+            if (hex.length() == 1) {
+                hexString.append('0');
+            }
+
+            hexString.append(hex);
+        }
+
+        return hexString.toString();
+    }
+}
