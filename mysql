@@ -1,0 +1,36 @@
+CREATE DATABASE IF NOT EXISTS dba_monitor
+CHARACTER SET utf8mb4
+COLLATE utf8mb4_unicode_ci;
+
+CREATE USER IF NOT EXISTS 'dba_monitor_user'@'localhost'
+IDENTIFIED BY 'YourStrongPasswordHere';
+
+GRANT SELECT, INSERT, UPDATE, DELETE
+ON dba_monitor.*
+TO 'dba_monitor_user'@'localhost';
+
+FLUSH PRIVILEGES;
+
+USE dba_monitor;
+
+CREATE TABLE IF NOT EXISTS app_users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(30) DEFAULT 'USER',
+    display_name VARCHAR(100),
+    active CHAR(1) DEFAULT 'Y',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS login_audit (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    username VARCHAR(50),
+    login_time DATETIME,
+    logout_time DATETIME,
+    ip_address VARCHAR(100),
+    user_agent TEXT,
+    status VARCHAR(30),
+    session_id VARCHAR(120),
+    remarks VARCHAR(255)
+);
