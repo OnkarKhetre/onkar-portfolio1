@@ -1,0 +1,541 @@
+package com.dba.controller;
+
+import java.io.IOException;
+import java.lang.reflect.Method;
+import java.sql.Connection;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.List;
+
+import com.dba.connection.databaseconnection;
+import com.dba.service.dbaqueryservice;
+
+import jakarta.servlet.ServletContext;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.annotation.WebServlet;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+
+@WebServlet("/notifications")
+public class NotificationServlet extends HttpServlet {
+    private static final long serialVersionUID = 1L;
+
+    private static final long CACHE_TIME_MS = 5 * 60 * 1000;
+
+    private static final String STATUS_RUNNING = "RUNNING";
+    private static final String STATUS_DONE = "DONE";
+    private static final String STATUS_ERROR = "ERROR";
+
+    private static final String[] FIXED_DBS = {
+            "PR-MIDB",
+            "PR-HIDB",
+            "PR-REPORTDB",
+            "PR-SBISIDB",
+            "PR-ARCHIVALDB",
+            "DR-MIDB"
+    };
+
+    protected void doGet(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+
+        response.setContentType("text/html;charset=UTF-8");
+        response.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+
+        ServletContext context = getServletContext();
+
+        String force = request.getParameter("force");
+
+        synchronized (context) {
+            String status = (String) context.getAttribute("notifyStatus");
+            Long lastLoaded = (Long) context.getAttribute("notifyLastLoaded");
+
+            boolean cacheMissing = context.getAttribute("notifyHtml") == null;
+            boolean cacheOld = lastLoaded == null || System.currentTimeMillis() - lastLoaded > CACHE_TIME_MS;
+            boolean forceRefresh = "true".equalsIgnoreCase(force);
+
+            if (forceRefresh || cacheMissing || cacheOld) {
+                if (!STATUS_RUNNING.equals(status)) {
+                    startNotificationWorker(context);
+                }
+            }
+        }
+
+        String status = (String) context.getAttribute("notifyStatus");
+
+        if (STATUS_RUNNING.equals(status)) {
+            response.getWriter().write(
+                    "<div id='notificationPayload' data-status='RUNNING' data-count='0'>" +
+                        "<div class='notify-empty'>" +
+                            "<div class='notify-loader'></div>" +
+                            "<div><b>Checking alerts...</b></div>" +
+                            "<div>Notifications are loading in background. Dashboard will not be affected.</div>" +
+                        "</div>" +
+                    "</div>"
+            );
+            return;
+        }
+
+        if (STATUS_ERROR.equals(status)) {
+            String error = String.valueOf(context.getAttribute("notifyError"));
+
+            response.getWriter().write(
+                    "<div id='notificationPayload' data-status='ERROR' data-count='1'>" +
+                        "<div class='notify-item critical'>" +
+                            "<button type='button' class='notify-close' onclick='closeNotification(this, event)'>×</button>" +
+                            "<div class='notify-title'>Notification check failed</div>" +
+                            "<div class='notify-message'>" + esc(error) + "</div>" +
+                        "</div>" +
+                    "</div>"
+            );
+            return;
+        }
+
+        Object html = context.getAttribute("notifyHtml");
+
+        if (html == null) {
+            response.getWriter().write(
+                    "<div id='notificationPayload' data-status='EMPTY' data-count='0'>" +
+                        "<div class='notify-empty'>No active alerts.</div>" +
+                    "</div>"
+            );
+            return;
+        }
+
+        response.getWriter().write(String.valueOf(html));
+    }
+
+    private void startNotificationWorker(final ServletContext context) {
+
+        synchronized (context) {
+            context.setAttribute("notifyStatus", STATUS_RUNNING);
+            context.setAttribute("notifyError", "");
+        }
+
+        Thread worker = new Thread(new Runnable() {
+            public void run() {
+
+                List<NotifyItem> notifications = new ArrayList<NotifyItem>();
+
+                try {
+                    dbaqueryservice service = new dbaqueryservice();
+
+                    for (String db : FIXED_DBS) {
+                        String[] parts = db.split("-");
+                        String site = parts[0];
+                        String target = parts[1];
+
+                        checkOneDatabase(service, site, target, notifications);
+                    }
+
+                    String html = buildNotificationHtml(notifications);
+
+                    synchronized (context) {
+                        context.setAttribute("notifyHtml", html);
+                        context.setAttribute("notifyCount", notifications.size());
+                        context.setAttribute("notifyLastLoaded", System.currentTimeMillis());
+                        context.setAttribute("notifyStatus", STATUS_DONE);
+                    }
+
+                } catch (Exception e) {
+                    e.printStackTrace();
+
+                    synchronized (context) {
+                        context.setAttribute("notifyStatus", STATUS_ERROR);
+                        context.setAttribute("notifyError", e.getMessage());
+                    }
+                }
+            }
+        });
+
+        worker.setDaemon(true);
+        worker.start();
+    }
+
+    private void checkOneDatabase(dbaqueryservice service, String site, String target, List<NotifyItem> notifications) {
+
+        Connection conn = null;
+
+        String dbLabel = site + "-" + target;
+
+        try {
+            conn = databaseconnection.getconnection(site, target);
+
+            if (conn == null) {
+                notifications.add(new NotifyItem(
+                        "conn-" + dbLabel,
+                        "warning",
+                        "Connection Warning - " + dbLabel,
+                        "Could not connect while checking notifications."
+                ));
+                return;
+            }
+
+            checkFra(service, conn, dbLabel, notifications);
+            checkTablespaces(service, conn, dbLabel, notifications);
+            checkUsers(service, conn, dbLabel, notifications);
+
+        } catch (Exception e) {
+            notifications.add(new NotifyItem(
+                    "error-" + dbLabel,
+                    "warning",
+                    "Notification Check Failed - " + dbLabel,
+                    "Error while checking " + dbLabel + ": " + e.getMessage()
+            ));
+
+        } finally {
+            if (conn != null) {
+                try {
+                    databaseconnection.closeconnection(conn);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    private void checkFra(dbaqueryservice service, Connection conn, String dbLabel, List<NotifyItem> notifications) {
+
+        List<?> fraList = callListMethod(
+                service,
+                conn,
+                "getfrausage",
+                "getFraUsage",
+                "getfra",
+                "getFra"
+        );
+
+        if (fraList == null) {
+            return;
+        }
+
+        int i = 1;
+
+        for (Object fraObj : fraList) {
+
+            String name = readString(fraObj, "getName", "getRecoveryFileDest", "getFraName");
+            double usedPct = readNumber(fraObj, "getPercentused", "getPercentUsed", "getUsedPercent", "getPctUsed");
+
+            /*
+             * If your FRA model getter returns FREE percentage instead of USED percentage,
+             * replace the above line with:
+             * double usedPct = 100 - readNumber(...);
+             */
+
+            if (usedPct >= 85) {
+                notifications.add(new NotifyItem(
+                        "fra-critical-" + dbLabel + "-" + i,
+                        "critical",
+                        "FRA Critical - " + dbLabel,
+                        "FRA " + name + " is " + fmt(usedPct) + "% used. Immediate check required."
+                ));
+            } else if (usedPct >= 75) {
+                notifications.add(new NotifyItem(
+                        "fra-warning-" + dbLabel + "-" + i,
+                        "warning",
+                        "FRA Warning - " + dbLabel,
+                        "FRA " + name + " is " + fmt(usedPct) + "% used."
+                ));
+            }
+
+            i++;
+        }
+    }
+
+    private void checkTablespaces(dbaqueryservice service, Connection conn, String dbLabel, List<NotifyItem> notifications) {
+
+        List<?> tbsList = callListMethod(
+                service,
+                conn,
+                "gettbs",
+                "getTbs",
+                "gettablespaces",
+                "getTablespaces"
+        );
+
+        if (tbsList == null) {
+            return;
+        }
+
+        int i = 1;
+
+        for (Object tbsObj : tbsList) {
+
+            String name = readString(tbsObj, "getName", "getTablespaceName", "getTablespace");
+            double usedPct = readNumber(tbsObj, "getPercentused", "getPercentUsed", "getPctUsed");
+            double freeGb = readNumber(tbsObj, "getFreegb", "getFreeGb", "getFreeGB");
+
+            if (usedPct >= 90) {
+                notifications.add(new NotifyItem(
+                        "tbs-critical-" + dbLabel + "-" + i,
+                        "critical",
+                        "Tablespace Critical - " + dbLabel,
+                        name + " is " + fmt(usedPct) + "% used. Free space: " + fmt(freeGb) + " GB."
+                ));
+            } else if (usedPct >= 80) {
+                notifications.add(new NotifyItem(
+                        "tbs-warning-" + dbLabel + "-" + i,
+                        "warning",
+                        "Tablespace Warning - " + dbLabel,
+                        name + " is " + fmt(usedPct) + "% used. Free space: " + fmt(freeGb) + " GB."
+                ));
+            }
+
+            i++;
+        }
+    }
+
+    private void checkUsers(dbaqueryservice service, Connection conn, String dbLabel, List<NotifyItem> notifications) {
+
+        List<?> userList = callListMethod(
+                service,
+                conn,
+                "getusers",
+                "getUsers",
+                "getdbausers",
+                "getDbaUsers",
+                "getallusers",
+                "getAllUsers"
+        );
+
+        if (userList == null) {
+            return;
+        }
+
+        int i = 1;
+
+        for (Object userObj : userList) {
+
+            String username = readString(userObj, "getUsername", "getUserName", "getName");
+            Object expiryObj = readObject(userObj, "getExpirydate", "getExpiryDate", "getExpiry_date", "getExpDate");
+
+            long days = daysRemaining(expiryObj);
+
+            if (days == Long.MAX_VALUE) {
+                continue;
+            }
+
+            if (days < 0) {
+                notifications.add(new NotifyItem(
+                        "user-expired-" + dbLabel + "-" + i,
+                        "critical",
+                        "User Expired - " + dbLabel,
+                        "User " + username + " expired " + Math.abs(days) + " day(s) ago."
+                ));
+            } else if (days <= 5) {
+                notifications.add(new NotifyItem(
+                        "user-critical-" + dbLabel + "-" + i,
+                        "critical",
+                        "User Expiry Critical - " + dbLabel,
+                        "User " + username + " will expire in " + days + " day(s)."
+                ));
+            } else if (days <= 10) {
+                notifications.add(new NotifyItem(
+                        "user-warning-" + dbLabel + "-" + i,
+                        "warning",
+                        "User Expiry Warning - " + dbLabel,
+                        "User " + username + " will expire in " + days + " day(s)."
+                ));
+            }
+
+            i++;
+        }
+    }
+
+    private List<?> callListMethod(dbaqueryservice service, Connection conn, String... methodNames) {
+
+        for (String methodName : methodNames) {
+            try {
+                Method method = service.getClass().getMethod(methodName, Connection.class);
+                Object result = method.invoke(service, conn);
+
+                if (result instanceof List<?>) {
+                    return (List<?>) result;
+                }
+
+            } catch (NoSuchMethodException e) {
+                // try next method name
+            } catch (Exception e) {
+                e.printStackTrace();
+                return null;
+            }
+        }
+
+        return null;
+    }
+
+    private Object readObject(Object obj, String... methodNames) {
+
+        if (obj == null) return null;
+
+        for (String methodName : methodNames) {
+            try {
+                Method method = obj.getClass().getMethod(methodName);
+                return method.invoke(obj);
+            } catch (Exception e) {
+                // try next method
+            }
+        }
+
+        return null;
+    }
+
+    private String readString(Object obj, String... methodNames) {
+
+        Object value = readObject(obj, methodNames);
+
+        if (value == null) {
+            return "";
+        }
+
+        return String.valueOf(value);
+    }
+
+    private double readNumber(Object obj, String... methodNames) {
+
+        Object value = readObject(obj, methodNames);
+
+        if (value == null) {
+            return 0;
+        }
+
+        if (value instanceof Number) {
+            return ((Number) value).doubleValue();
+        }
+
+        try {
+            return Double.parseDouble(String.valueOf(value).replace("%", "").replace(",", "").trim());
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    private long daysRemaining(Object expiryValue) {
+
+        Date expiryDate = parseDateSafe(expiryValue);
+
+        if (expiryDate == null) {
+            return Long.MAX_VALUE;
+        }
+
+        Calendar today = Calendar.getInstance();
+        today.set(Calendar.HOUR_OF_DAY, 0);
+        today.set(Calendar.MINUTE, 0);
+        today.set(Calendar.SECOND, 0);
+        today.set(Calendar.MILLISECOND, 0);
+
+        Calendar expiry = Calendar.getInstance();
+        expiry.setTime(expiryDate);
+        expiry.set(Calendar.HOUR_OF_DAY, 0);
+        expiry.set(Calendar.MINUTE, 0);
+        expiry.set(Calendar.SECOND, 0);
+        expiry.set(Calendar.MILLISECOND, 0);
+
+        long diff = expiry.getTimeInMillis() - today.getTimeInMillis();
+
+        return diff / (1000 * 60 * 60 * 24);
+    }
+
+    private Date parseDateSafe(Object value) {
+
+        if (value == null) return null;
+
+        if (value instanceof Date) {
+            return (Date) value;
+        }
+
+        String text = String.valueOf(value).trim();
+
+        if (text.length() == 0 || text.equalsIgnoreCase("null") || text.equalsIgnoreCase("N/A")) {
+            return null;
+        }
+
+        String[] patterns = {
+                "yyyy-MM-dd HH:mm:ss.S",
+                "yyyy-MM-dd HH:mm:ss",
+                "yyyy-MM-dd",
+                "dd-MMM-yyyy",
+                "dd-MMM-yy",
+                "dd/MM/yyyy",
+                "dd-MM-yyyy",
+                "MM/dd/yyyy"
+        };
+
+        for (String pattern : patterns) {
+            try {
+                SimpleDateFormat sdf = new SimpleDateFormat(pattern, java.util.Locale.ENGLISH);
+                sdf.setLenient(false);
+                return sdf.parse(text);
+            } catch (Exception e) {
+                // try next format
+            }
+        }
+
+        return null;
+    }
+
+    private String buildNotificationHtml(List<NotifyItem> list) {
+
+        StringBuilder html = new StringBuilder();
+
+        html.append("<div id='notificationPayload' data-status='DONE' data-count='")
+            .append(list.size())
+            .append("'>");
+
+        if (list.isEmpty()) {
+            html.append("<div class='notify-empty'>No active alerts. System looks normal.</div>");
+        } else {
+            for (NotifyItem item : list) {
+                html.append("<div class='notify-item ")
+                    .append(esc(item.type))
+                    .append("' data-notify-id='")
+                    .append(esc(item.id))
+                    .append("'>");
+
+                html.append("<button type='button' class='notify-close' onclick='closeNotification(this, event)'>×</button>");
+                html.append("<div class='notify-title'>").append(esc(item.title)).append("</div>");
+                html.append("<div class='notify-message'>").append(esc(item.message)).append("</div>");
+                html.append("</div>");
+            }
+        }
+
+        html.append("</div>");
+
+        return html.toString();
+    }
+
+    private String esc(Object value) {
+
+        if (value == null) {
+            return "";
+        }
+
+        String s = String.valueOf(value);
+
+        return s.replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;")
+                .replace("'", "&#39;");
+    }
+
+    private String fmt(double value) {
+        return String.format("%.2f", value);
+    }
+
+    private static class NotifyItem {
+        String id;
+        String type;
+        String title;
+        String message;
+
+        NotifyItem(String id, String type, String title, String message) {
+            this.id = id;
+            this.type = type;
+            this.title = title;
+            this.message = message;
+        }
+    }
+}
