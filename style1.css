@@ -1,53 +1,159 @@
-.user-chip{
-    height:36px;
-    display:flex;
-    align-items:center;
-    gap:8px;
-    padding:0 12px;
-    border-radius:999px;
-    background:var(--surface-soft);
-    border:1px solid var(--line);
-    color:var(--text);
-    font-size:13px;
-    font-weight:900;
-    white-space:nowrap;
+.notification-wrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    margin-left: 8px;
 }
 
-.user-chip span{
-    color:var(--muted);
-    font-size:11px;
-    text-transform:uppercase;
+.notification-btn {
+    height: 36px;
+    min-width: 42px;
+    border: 1px solid var(--line);
+    background: var(--surface-soft);
+    color: var(--text);
+    border-radius: 12px;
+    cursor: pointer;
+    font-size: 16px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.emergency-chip{
-    height:36px;
-    display:flex;
-    align-items:center;
-    padding:0 12px;
-    border-radius:999px;
-    background:rgba(245,158,11,.15);
-    border:1px solid rgba(245,158,11,.45);
-    color:#f59e0b;
-    font-size:13px;
-    font-weight:900;
-    white-space:nowrap;
+.notification-btn:hover {
+    border-color: var(--accent);
 }
 
-.logout-btn{
-    height:36px;
-    display:flex;
-    align-items:center;
-    padding:0 13px;
-    border-radius:999px;
-    text-decoration:none;
-    background:rgba(239,68,68,.12);
-    border:1px solid rgba(239,68,68,.35);
-    color:#ef4444;
-    font-size:13px;
-    font-weight:900;
+.notification-badge {
+    position: absolute;
+    top: -7px;
+    right: -7px;
+    background: #ef4444;
+    color: white;
+    min-width: 19px;
+    height: 19px;
+    padding: 0 5px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 900;
+    display: none;
+    align-items: center;
+    justify-content: center;
 }
 
-.logout-btn:hover{
-    background:#ef4444;
-    color:white;
+.notification-panel {
+    position: absolute;
+    top: 44px;
+    right: 0;
+    width: 400px;
+    max-height: 460px;
+    overflow-y: auto;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    box-shadow: var(--shadow);
+    z-index: 9999;
+    display: none;
+    padding: 12px;
+}
+
+.notification-panel.show {
+    display: block;
+}
+
+.notification-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 4px 10px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 10px;
+}
+
+.notification-panel-title {
+    font-size: 14px;
+    font-weight: 900;
+    color: var(--text);
+}
+
+.notification-panel-count {
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.notify-empty {
+    padding: 20px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.notify-item {
+    position: relative;
+    padding: 12px 38px 12px 13px;
+    border-radius: 14px;
+    margin-bottom: 10px;
+    border: 1px solid var(--line);
+    background: var(--surface);
+}
+
+.notify-item.critical {
+    border-left: 4px solid #ef4444;
+}
+
+.notify-item.warning {
+    border-left: 4px solid #f59e0b;
+}
+
+.notify-item.info {
+    border-left: 4px solid #22d3ee;
+}
+
+.notify-title {
+    font-size: 13px;
+    font-weight: 900;
+    color: var(--text);
+    margin-bottom: 5px;
+}
+
+.notify-message {
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--muted);
+}
+
+.notify-close {
+    position: absolute;
+    right: 9px;
+    top: 9px;
+    width: 22px;
+    height: 22px;
+    border: none;
+    border-radius: 50%;
+    background: var(--surface-soft);
+    color: var(--text);
+    cursor: pointer;
+    font-weight: 900;
+}
+
+.notify-close:hover {
+    background: #ef4444;
+    color: white;
+}
+
+.notify-loader {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 3px solid var(--surface-soft);
+    border-top-color: var(--accent);
+    animation: notifySpin 1s linear infinite;
+    margin: 0 auto 10px;
+}
+
+@keyframes notifySpin {
+    to {
+        transform: rotate(360deg);
+    }
 }
