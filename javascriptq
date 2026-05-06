@@ -1,0 +1,127 @@
+var APP_CONTEXT_PATH = "<%= request.getContextPath() %>";
+
+function toggleNotificationPanel(event) {
+    event.stopPropagation();
+
+    var panel = document.getElementById("notificationPanel");
+    if (!panel) return;
+
+    panel.classList.toggle("show");
+}
+
+function loadGlobalNotifications(forceRefresh) {
+    var list = document.getElementById("notificationList");
+
+    if (!list) {
+        return;
+    }
+
+    if (forceRefresh) {
+        list.innerHTML =
+            "<div class='notify-empty'>" +
+            "<div class='notify-loader'></div>" +
+            "<div><b>Refreshing notifications...</b></div>" +
+            "</div>";
+    }
+
+    var url = APP_CONTEXT_PATH + "/notifications";
+
+    if (forceRefresh) {
+        url += "?force=true";
+    }
+
+    fetch(url, {
+        method: "GET",
+        cache: "no-store"
+    })
+    .then(function(response) {
+        return response.text();
+    })
+    .then(function(html) {
+        var temp = document.createElement("div");
+        temp.innerHTML = html;
+
+        var payload = temp.querySelector("#notificationPayload");
+
+        if (!payload) {
+            list.innerHTML =
+                "<div class='notify-empty'>Unable to read notification response.</div>";
+            updateNotificationCount(0);
+            return;
+        }
+
+        var status = payload.getAttribute("data-status");
+        var count = parseInt(payload.getAttribute("data-count") || "0", 10);
+
+        list.innerHTML = payload.innerHTML;
+        updateNotificationCount(count);
+
+        if (status === "RUNNING") {
+            setTimeout(function() {
+                loadGlobalNotifications(false);
+            }, 15000);
+        }
+    })
+    .catch(function(error) {
+        list.innerHTML =
+            "<div class='notify-empty'>Notification check failed: " + error + "</div>";
+        updateNotificationCount(0);
+    });
+}
+
+function closeNotification(btn, event) {
+    event.stopPropagation();
+
+    var item = btn.closest(".notify-item");
+
+    if (item) {
+        item.remove();
+    }
+
+    var items = document.querySelectorAll("#notificationList .notify-item");
+    updateNotificationCount(items.length);
+
+    if (items.length === 0) {
+        var list = document.getElementById("notificationList");
+        list.innerHTML =
+            "<div class='notify-empty'>No active alerts. System looks normal.</div>";
+    }
+}
+
+function updateNotificationCount(count) {
+    var badge = document.getElementById("notificationBadge");
+    var countText = document.getElementById("notificationCount");
+
+    if (countText) {
+        countText.innerText = count;
+    }
+
+    if (badge) {
+        badge.innerText = count;
+
+        if (count > 0) {
+            badge.style.display = "flex";
+        } else {
+            badge.style.display = "none";
+        }
+    }
+}
+
+document.addEventListener("click", function(event) {
+    var wrap = document.getElementById("notificationWrap");
+    var panel = document.getElementById("notificationPanel");
+
+    if (!wrap || !panel) return;
+
+    if (!wrap.contains(event.target)) {
+        panel.classList.remove("show");
+    }
+});
+
+/*
+ * Delay start so dashboard opens first.
+ * Notification DB checks happen in background.
+ */
+setTimeout(function() {
+    loadGlobalNotifications(false);
+}, 1500);
