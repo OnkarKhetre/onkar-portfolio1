@@ -1,0 +1,194 @@
+package com.dba.service;
+
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.util.ArrayList;
+import java.util.List;
+
+import com.dba.connection.MysqlConnection;
+import com.dba.models.NotificationRule;
+
+public class NotificationRuleService {
+
+    public List<NotificationRule> getEnabledRules() throws Exception {
+        return getRules("Y");
+    }
+
+    public List<NotificationRule> getAllRules() throws Exception {
+        return getRules(null);
+    }
+
+    private List<NotificationRule> getRules(String enabledOnly) throws Exception {
+
+        List<NotificationRule> rules = new ArrayList<NotificationRule>();
+
+        String sql =
+                "SELECT id, site, target, metric_type, object_name, warning_value, critical_value, enabled " +
+                "FROM notification_rules ";
+
+        if (enabledOnly != null) {
+            sql += "WHERE enabled = ? ";
+        }
+
+        sql += "ORDER BY site, target, metric_type, object_name";
+
+        Connection conn = null;
+        PreparedStatement ps = null;
+        ResultSet rs = null;
+
+        try {
+            conn = MysqlConnection.getConnection();
+            ps = conn.prepareStatement(sql);
+
+            if (enabledOnly != null) {
+                ps.setString(1, enabledOnly);
+            }
+
+            rs = ps.executeQuery();
+
+            while (rs.next()) {
+                NotificationRule rule = new NotificationRule();
+
+                rule.setId(rs.getLong("id"));
+                rule.setSite(rs.getString("site"));
+                rule.setTarget(rs.getString("target"));
+                rule.setMetricType(rs.getString("metric_type"));
+                rule.setObjectName(rs.getString("object_name"));
+                rule.setWarningValue(rs.getDouble("warning_value"));
+                rule.setCriticalValue(rs.getDouble("critical_value"));
+                rule.setEnabled(rs.getString("enabled"));
+
+                rules.add(rule);
+            }
+
+        } finally {
+            if (rs != null) {
+                try { rs.close(); } catch (Exception e) {}
+            }
+
+            if (ps != null) {
+                try { ps.close(); } catch (Exception e) {}
+            }
+
+            MysqlConnection.closeConnection(conn);
+        }
+
+        return rules;
+    }
+
+    public void saveRule(String site, String target, String metricType, String objectName,
+                         double warningValue, double criticalValue) throws Exception {
+
+        String sql =
+                "INSERT INTO notification_rules " +
+                "(site, target, metric_type, object_name, warning_value, critical_value, enabled) " +
+                "VALUES (?, ?, ?, ?, ?, ?, 'Y') " +
+                "ON DUPLICATE KEY UPDATE " +
+                "warning_value = VALUES(warning_value), " +
+                "critical_value = VALUES(critical_value), " +
+                "enabled = 'Y'";
+
+        Connection conn = null;
+        PreparedStatement ps = null;
+
+        try {
+            conn = MysqlConnection.getConnection();
+            ps = conn.prepareStatement(sql);
+
+            ps.setString(1, clean(site));
+            ps.setString(2, clean(target));
+            ps.setString(3, clean(metricType));
+            ps.setString(4, clean(objectName));
+            ps.setDouble(5, warningValue);
+            ps.setDouble(6, criticalValue);
+
+            ps.executeUpdate();
+
+        } finally {
+            if (ps != null) {
+                try { ps.close(); } catch (Exception e) {}
+            }
+
+            MysqlConnection.closeConnection(conn);
+        }
+    }
+
+    public void deleteRule(long id) throws Exception {
+
+        String sql = "DELETE FROM notification_rules WHERE id = ?";
+
+        Connection conn = null;
+        PreparedStatement ps = null;
+
+        try {
+            conn = MysqlConnection.getConnection();
+            ps = conn.prepareStatement(sql);
+            ps.setLong(1, id);
+            ps.executeUpdate();
+
+        } finally {
+            if (ps != null) {
+                try { ps.close(); } catch (Exception e) {}
+            }
+
+            MysqlConnection.closeConnection(conn);
+        }
+    }
+
+    public List<NotificationRule> getRulesForDbAndType(List<NotificationRule> allRules,
+                                                        String site,
+                                                        String target,
+                                                        String metricType) {
+
+        List<NotificationRule> matched = new ArrayList<NotificationRule>();
+
+        for (NotificationRule rule : allRules) {
+            if (rule == null) continue;
+
+            boolean siteMatch =
+                    safe(rule.getSite()).equalsIgnoreCase(site)
+                    || safe(rule.getSite()).equalsIgnoreCase("ALL");
+
+            boolean targetMatch =
+                    safe(rule.getTarget()).equalsIgnoreCase(target)
+                    || safe(rule.getTarget()).equalsIgnoreCase("ALL");
+
+            boolean typeMatch =
+                    safe(rule.getMetricType()).equalsIgnoreCase(metricType);
+
+            if (siteMatch && targetMatch && typeMatch) {
+                matched.add(rule);
+            }
+        }
+
+        return matched;
+    }
+
+    public NotificationRule findRuleForObject(List<NotificationRule> rules, String objectName) {
+
+        for (NotificationRule rule : rules) {
+            String ruleObject = safe(rule.getObjectName());
+
+            if (ruleObject.equalsIgnoreCase("ALL")) {
+                return rule;
+            }
+
+            if (ruleObject.equalsIgnoreCase(objectName)) {
+                return rule;
+            }
+        }
+
+        return null;
+    }
+
+    private String clean(String value) {
+        if (value == null) return "";
+        return value.trim().toUpperCase();
+    }
+
+    private String safe(String value) {
+        if (value == null) return "";
+        return value.trim();
+    }
+}
