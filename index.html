@@ -1,27 +1,4 @@
-<div class="notification-wrap" id="notificationWrap">
-    <button type="button" class="notification-btn" onclick="toggleNotificationPanel(event)" title="Notifications">
-        🔔
-        <span class="notification-badge" id="notificationBadge">0</span>
-    </button>
-
-    <div class="notification-panel" id="notificationPanel">
-        <div class="notification-panel-header">
-            <div class="notification-panel-title">Notifications</div>
-            <div class="notification-panel-count">
-                <span id="notificationCount">0</span> active
-            </div>
-        </div>
-
-        <div id="notificationList">
-            <div class="notify-empty">
-                Notifications will load in background.
-            </div>
-        </div>
-
-        <div style="padding:8px 4px 2px;">
-            <button type="button" class="btn-secondary" onclick="loadGlobalNotifications(true)" style="width:100%;">
-                ↻ Refresh Notifications
-            </button>
-        </div>
-    </div>
-</div>
+<a href="<%= request.getContextPath() %>/important" class="nav-item">
+    <span class="nav-icon">⭐</span>
+    <span>Important</span>
+</a>
