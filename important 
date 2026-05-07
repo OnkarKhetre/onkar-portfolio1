@@ -1,0 +1,310 @@
+<%@ page import="java.util.*" %>
+<%@ page import="com.dba.models.NotificationRule" %>
+<%@ page contentType="text/html;charset=UTF-8" language="java" %>
+
+<%
+    List<NotificationRule> rules = (List<NotificationRule>) request.getAttribute("importantRules");
+    String errorMsg = (String) request.getAttribute("errorMsg");
+
+    if (rules == null) {
+        rules = new ArrayList<NotificationRule>();
+    }
+
+    String ctx = request.getContextPath();
+%>
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Important Notifications - DBA Monitor</title>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Arial, sans-serif;
+            background: #0f172a;
+            color: #e5eefb;
+        }
+
+        .page {
+            min-height: 100vh;
+            padding: 28px;
+            background:
+                radial-gradient(circle at top left, rgba(34,211,238,.16), transparent 30%),
+                linear-gradient(135deg, #0f172a, #102033);
+        }
+
+        .top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 22px;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 26px;
+        }
+
+        .back {
+            color: #22d3ee;
+            text-decoration: none;
+            font-weight: 700;
+        }
+
+        .card {
+            background: rgba(15,23,42,.78);
+            border: 1px solid rgba(148,163,184,.25);
+            border-radius: 18px;
+            padding: 18px;
+            box-shadow: 0 18px 50px rgba(0,0,0,.25);
+            margin-bottom: 18px;
+        }
+
+        .note {
+            color: #94a3b8;
+            font-size: 14px;
+            margin-top: 6px;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 12px;
+            align-items: end;
+        }
+
+        label {
+            display: block;
+            font-size: 12px;
+            font-weight: 800;
+            color: #cbd5e1;
+            margin-bottom: 6px;
+            text-transform: uppercase;
+        }
+
+        input, select {
+            width: 100%;
+            height: 40px;
+            border-radius: 10px;
+            border: 1px solid rgba(148,163,184,.30);
+            background: rgba(2,6,23,.55);
+            color: #e5eefb;
+            padding: 0 10px;
+            outline: none;
+        }
+
+        button {
+            height: 40px;
+            border: none;
+            border-radius: 10px;
+            padding: 0 16px;
+            background: #22d3ee;
+            color: #06202a;
+            font-weight: 900;
+            cursor: pointer;
+        }
+
+        button:hover {
+            filter: brightness(1.08);
+        }
+
+        .danger-btn {
+            background: #ef4444;
+            color: white;
+            height: 32px;
+            padding: 0 12px;
+            font-size: 12px;
+        }
+
+        .error {
+            background: rgba(239,68,68,.15);
+            border: 1px solid rgba(239,68,68,.35);
+            color: #fecaca;
+            border-radius: 12px;
+            padding: 12px;
+            margin-bottom: 14px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            overflow: hidden;
+            border-radius: 14px;
+        }
+
+        th, td {
+            padding: 12px;
+            border-bottom: 1px solid rgba(148,163,184,.18);
+            font-size: 14px;
+            text-align: left;
+        }
+
+        th {
+            background: rgba(2,6,23,.65);
+            color: #cbd5e1;
+            text-transform: uppercase;
+            font-size: 12px;
+        }
+
+        .tag {
+            display: inline-block;
+            padding: 5px 9px;
+            border-radius: 999px;
+            background: rgba(34,211,238,.15);
+            color: #67e8f9;
+            font-weight: 800;
+            font-size: 12px;
+        }
+
+        .empty {
+            padding: 18px;
+            color: #94a3b8;
+            text-align: center;
+        }
+    </style>
+</head>
+
+<body>
+<div class="page">
+
+    <div class="top">
+        <div>
+            <h1>Important Notification Settings</h1>
+            <div class="note">
+                FRA alerts are mandatory for all databases. Add only important tablespaces and users here.
+            </div>
+        </div>
+
+        <a class="back" href="<%= ctx %>/refreshstats">← Back to Dashboard</a>
+    </div>
+
+    <% if (errorMsg != null) { %>
+        <div class="error"><%= errorMsg %></div>
+    <% } %>
+
+    <div class="card">
+        <form method="post" action="<%= ctx %>/important">
+            <input type="hidden" name="action" value="add">
+
+            <div class="form-grid">
+                <div>
+                    <label>Site</label>
+                    <select name="site" required>
+                        <option value="PR">PR</option>
+                        <option value="DR">DR</option>
+                        <option value="ALL">ALL</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label>Target</label>
+                    <select name="target" required>
+                        <option value="MIDB">MIDB</option>
+                        <option value="HIDB">HIDB</option>
+                        <option value="REPORTDB">REPORTDB</option>
+                        <option value="SBISIDB">SBISIDB</option>
+                        <option value="ARCHIVALDB">ARCHIVALDB</option>
+                        <option value="ALL">ALL</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label>Type</label>
+                    <select name="metricType" id="metricType" onchange="setDefaultLimits()" required>
+                        <option value="TABLESPACE">TABLESPACE</option>
+                        <option value="USER">USER</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label>Name</label>
+                    <input type="text" name="objectName" placeholder="EISAPP / username" required>
+                </div>
+
+                <div>
+                    <label>Warning</label>
+                    <input type="number" step="0.01" name="warningValue" id="warningValue" value="80" required>
+                </div>
+
+                <div>
+                    <label>Critical</label>
+                    <input type="number" step="0.01" name="criticalValue" id="criticalValue" value="90" required>
+                </div>
+            </div>
+
+            <div class="note" style="margin-top:12px;">
+                For TABLESPACE: warning/critical means used %. For USER: warning/critical means expiry days remaining.
+            </div>
+
+            <div style="margin-top:14px;">
+                <button type="submit">Save Important Item</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="card">
+        <h2 style="margin-top:0;">Saved Important Items</h2>
+
+        <% if (rules.isEmpty()) { %>
+            <div class="empty">No important users or tablespaces added yet.</div>
+        <% } else { %>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Site</th>
+                        <th>Target</th>
+                        <th>Type</th>
+                        <th>Name</th>
+                        <th>Warning</th>
+                        <th>Critical</th>
+                        <th>Enabled</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                <% for (NotificationRule r : rules) { %>
+                    <tr>
+                        <td><span class="tag"><%= r.getSite() %></span></td>
+                        <td><%= r.getTarget() %></td>
+                        <td><%= r.getMetricType() %></td>
+                        <td><b><%= r.getObjectName() %></b></td>
+                        <td><%= r.getWarningValue() %></td>
+                        <td><%= r.getCriticalValue() %></td>
+                        <td><%= r.getEnabled() %></td>
+                        <td>
+                            <form method="post" action="<%= ctx %>/important" style="margin:0;">
+                                <input type="hidden" name="action" value="delete">
+                                <input type="hidden" name="id" value="<%= r.getId() %>">
+                                <button class="danger-btn" type="submit">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                <% } %>
+                </tbody>
+            </table>
+        <% } %>
+    </div>
+
+</div>
+
+<script>
+function setDefaultLimits() {
+    var type = document.getElementById("metricType").value;
+    var warning = document.getElementById("warningValue");
+    var critical = document.getElementById("criticalValue");
+
+    if (type === "USER") {
+        warning.value = "10";
+        critical.value = "5";
+    } else {
+        warning.value = "80";
+        critical.value = "90";
+    }
+}
+</script>
+
+</body>
+</html>
