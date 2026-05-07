@@ -3,29 +3,70 @@ package com.dba.service;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.util.ArrayList;
+import java.util.List;
 
 import com.dba.connection.MysqlConnection;
-import com.dba.models.loginuser;
+import com.dba.models.HandoverEntry;
 
-public class UserService {
+public class HandoverService {
 
-    /*
-     * Emergency login works ONLY when MySQL login check fails due to DB/connection issue.
-     * Change password before final deployment.
-     */
-    private static final String EMERGENCY_USERNAME = "emergency";
-    private static final String EMERGENCY_PASSWORD = "Emergency@123";
-
-    public loginuser validateUserFromDatabase(String username, String password) throws Exception {
-
-        if (username == null || password == null) {
-            return null;
-        }
+    public void addHandover(HandoverEntry entry) throws Exception {
 
         String sql =
-                "SELECT id, username, password_hash, role, display_name, active " +
-                "FROM app_users " +
-                "WHERE username = ? AND active = 'Y'";
+                "INSERT INTO shift_handover " +
+                "(handover_date, from_shift, to_shift, category, priority, title, details, status, created_by) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, 'OPEN', ?)";
+
+        Connection conn = null;
+        PreparedStatement ps = null;
+
+        try {
+            conn = MysqlConnection.getConnection();
+            ps = conn.prepareStatement(sql);
+
+            ps.setDate(1, entry.getHandoverDate());
+            ps.setString(2, entry.getFromShift());
+            ps.setString(3, entry.getToShift());
+            ps.setString(4, entry.getCategory());
+            ps.setString(5, entry.getPriority());
+            ps.setString(6, entry.getTitle());
+            ps.setString(7, entry.getDetails());
+            ps.setString(8, entry.getCreatedBy());
+
+            ps.executeUpdate();
+
+        } finally {
+            if (ps != null) {
+                try { ps.close(); } catch (Exception e) {}
+            }
+            MysqlConnection.closeConnection(conn);
+        }
+    }
+
+    public List<HandoverEntry> getHandovers(String dateFilter, String statusFilter) throws Exception {
+
+        List<HandoverEntry> list = new ArrayList<HandoverEntry>();
+
+        String sql =
+                "SELECT id, handover_date, from_shift, to_shift, category, priority, title, details, " +
+                "status, created_by, created_at, updated_at " +
+                "FROM shift_handover WHERE 1=1 ";
+
+        List<String> params = new ArrayList<String>();
+
+        if (dateFilter != null && dateFilter.trim().length() > 0) {
+            sql += "AND handover_date = ? ";
+            params.add(dateFilter.trim());
+        }
+
+        if (statusFilter != null && statusFilter.trim().length() > 0
+                && !"ALL".equalsIgnoreCase(statusFilter)) {
+            sql += "AND status = ? ";
+            params.add(statusFilter.trim().toUpperCase());
+        }
+
+        sql += "ORDER BY handover_date DESC, created_at DESC, id DESC";
 
         Connection conn = null;
         PreparedStatement ps = null;
@@ -33,61 +74,93 @@ public class UserService {
 
         try {
             conn = MysqlConnection.getConnection();
-
             ps = conn.prepareStatement(sql);
-            ps.setString(1, username.trim());
+
+            for (int i = 0; i < params.size(); i++) {
+                ps.setString(i + 1, params.get(i));
+            }
 
             rs = ps.executeQuery();
 
-            if (rs.next()) {
+            while (rs.next()) {
+                HandoverEntry h = new HandoverEntry();
 
-                String storedPasswordHash = rs.getString("password_hash");
+                h.setId(rs.getLong("id"));
+                h.setHandoverDate(rs.getDate("handover_date"));
+                h.setFromShift(rs.getString("from_shift"));
+                h.setToShift(rs.getString("to_shift"));
+                h.setCategory(rs.getString("category"));
+                h.setPriority(rs.getString("priority"));
+                h.setTitle(rs.getString("title"));
+                h.setDetails(rs.getString("details"));
+                h.setStatus(rs.getString("status"));
+                h.setCreatedBy(rs.getString("created_by"));
+                h.setCreatedAt(rs.getTimestamp("created_at"));
+                h.setUpdatedAt(rs.getTimestamp("updated_at"));
 
-                if (PasswordUtil.passwordMatches(password, storedPasswordHash)) {
-
-                    loginuser user = new loginuser();
-
-                    user.setId(rs.getInt("id"));
-                    user.setUsername(rs.getString("username"));
-                    user.setRole(rs.getString("role"));
-                    user.setDisplayName(rs.getString("display_name"));
-                    user.setActive(rs.getString("active"));
-                    user.setEmergencyLogin(false);
-
-                    return user;
-                }
+                list.add(h);
             }
 
         } finally {
-            if (rs != null) try { rs.close(); } catch (Exception e) {}
-            if (ps != null) try { ps.close(); } catch (Exception e) {}
+            if (rs != null) {
+                try { rs.close(); } catch (Exception e) {}
+            }
+
+            if (ps != null) {
+                try { ps.close(); } catch (Exception e) {}
+            }
+
             MysqlConnection.closeConnection(conn);
         }
 
-        return null;
+        return list;
     }
 
-    public loginuser validateEmergencyUser(String username, String password) {
+    public void updateStatus(long id, String status) throws Exception {
 
-        if (username == null || password == null) {
-            return null;
+        String sql = "UPDATE shift_handover SET status = ? WHERE id = ?";
+
+        Connection conn = null;
+        PreparedStatement ps = null;
+
+        try {
+            conn = MysqlConnection.getConnection();
+            ps = conn.prepareStatement(sql);
+
+            ps.setString(1, status);
+            ps.setLong(2, id);
+
+            ps.executeUpdate();
+
+        } finally {
+            if (ps != null) {
+                try { ps.close(); } catch (Exception e) {}
+            }
+
+            MysqlConnection.closeConnection(conn);
         }
+    }
 
-        if (EMERGENCY_USERNAME.equals(username.trim())
-                && EMERGENCY_PASSWORD.equals(password)) {
+    public void deleteHandover(long id) throws Exception {
 
-            loginuser user = new loginuser();
+        String sql = "DELETE FROM shift_handover WHERE id = ?";
 
-            user.setId(-1);
-            user.setUsername(EMERGENCY_USERNAME);
-            user.setRole("ADMIN");
-            user.setDisplayName("Emergency Admin");
-            user.setActive("Y");
-            user.setEmergencyLogin(true);
+        Connection conn = null;
+        PreparedStatement ps = null;
 
-            return user;
+        try {
+            conn = MysqlConnection.getConnection();
+            ps = conn.prepareStatement(sql);
+
+            ps.setLong(1, id);
+            ps.executeUpdate();
+
+        } finally {
+            if (ps != null) {
+                try { ps.close(); } catch (Exception e) {}
+            }
+
+            MysqlConnection.closeConnection(conn);
         }
-
-        return null;
     }
 }
