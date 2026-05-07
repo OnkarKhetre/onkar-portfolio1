@@ -40,3 +40,19 @@ INSERT INTO app_users
 (username, password_hash, role, display_name, active)
 VALUES
 ('admin', CONCAT('SHA256:', SHA2('admin123', 256)), 'ADMIN', 'Administrator', 'Y');
+
+
+USE dba_monitor;
+
+CREATE TABLE IF NOT EXISTS notification_rules (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    site VARCHAR(20) NOT NULL,
+    target VARCHAR(40) NOT NULL,
+    metric_type VARCHAR(30) NOT NULL,
+    object_name VARCHAR(100) NOT NULL,
+    warning_value DOUBLE NOT NULL,
+    critical_value DOUBLE NOT NULL,
+    enabled CHAR(1) DEFAULT 'Y',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_notification_rule (site, target, metric_type, object_name)
+);
