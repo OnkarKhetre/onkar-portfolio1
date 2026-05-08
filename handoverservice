@@ -1,0 +1,166 @@
+package com.dba.service;
+
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.util.ArrayList;
+import java.util.List;
+
+import com.dba.connection.MysqlConnection;
+import com.dba.models.HandoverEntry;
+
+public class HandoverService {
+
+    public void addHandover(HandoverEntry entry) throws Exception {
+
+        String sql =
+                "INSERT INTO shift_handover " +
+                "(handover_date, from_shift, to_shift, category, priority, title, details, status, created_by) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, 'OPEN', ?)";
+
+        Connection conn = null;
+        PreparedStatement ps = null;
+
+        try {
+            conn = MysqlConnection.getConnection();
+            ps = conn.prepareStatement(sql);
+
+            ps.setDate(1, entry.getHandoverDate());
+            ps.setString(2, entry.getFromShift());
+            ps.setString(3, entry.getToShift());
+            ps.setString(4, entry.getCategory());
+            ps.setString(5, entry.getPriority());
+            ps.setString(6, entry.getTitle());
+            ps.setString(7, entry.getDetails());
+            ps.setString(8, entry.getCreatedBy());
+
+            ps.executeUpdate();
+
+        } finally {
+            if (ps != null) {
+                try { ps.close(); } catch (Exception e) {}
+            }
+            MysqlConnection.closeConnection(conn);
+        }
+    }
+
+    public List<HandoverEntry> getHandovers(String dateFilter, String statusFilter) throws Exception {
+
+        List<HandoverEntry> list = new ArrayList<HandoverEntry>();
+
+        String sql =
+                "SELECT id, handover_date, from_shift, to_shift, category, priority, title, details, " +
+                "status, created_by, created_at, updated_at " +
+                "FROM shift_handover WHERE 1=1 ";
+
+        List<String> params = new ArrayList<String>();
+
+        if (dateFilter != null && dateFilter.trim().length() > 0) {
+            sql += "AND handover_date = ? ";
+            params.add(dateFilter.trim());
+        }
+
+        if (statusFilter != null && statusFilter.trim().length() > 0
+                && !"ALL".equalsIgnoreCase(statusFilter)) {
+            sql += "AND status = ? ";
+            params.add(statusFilter.trim().toUpperCase());
+        }
+
+        sql += "ORDER BY handover_date DESC, created_at DESC, id DESC";
+
+        Connection conn = null;
+        PreparedStatement ps = null;
+        ResultSet rs = null;
+
+        try {
+            conn = MysqlConnection.getConnection();
+            ps = conn.prepareStatement(sql);
+
+            for (int i = 0; i < params.size(); i++) {
+                ps.setString(i + 1, params.get(i));
+            }
+
+            rs = ps.executeQuery();
+
+            while (rs.next()) {
+                HandoverEntry h = new HandoverEntry();
+
+                h.setId(rs.getLong("id"));
+                h.setHandoverDate(rs.getDate("handover_date"));
+                h.setFromShift(rs.getString("from_shift"));
+                h.setToShift(rs.getString("to_shift"));
+                h.setCategory(rs.getString("category"));
+                h.setPriority(rs.getString("priority"));
+                h.setTitle(rs.getString("title"));
+                h.setDetails(rs.getString("details"));
+                h.setStatus(rs.getString("status"));
+                h.setCreatedBy(rs.getString("created_by"));
+                h.setCreatedAt(rs.getTimestamp("created_at"));
+                h.setUpdatedAt(rs.getTimestamp("updated_at"));
+
+                list.add(h);
+            }
+
+        } finally {
+            if (rs != null) {
+                try { rs.close(); } catch (Exception e) {}
+            }
+
+            if (ps != null) {
+                try { ps.close(); } catch (Exception e) {}
+            }
+
+            MysqlConnection.closeConnection(conn);
+        }
+
+        return list;
+    }
+
+    public void updateStatus(long id, String status) throws Exception {
+
+        String sql = "UPDATE shift_handover SET status = ? WHERE id = ?";
+
+        Connection conn = null;
+        PreparedStatement ps = null;
+
+        try {
+            conn = MysqlConnection.getConnection();
+            ps = conn.prepareStatement(sql);
+
+            ps.setString(1, status);
+            ps.setLong(2, id);
+
+            ps.executeUpdate();
+
+        } finally {
+            if (ps != null) {
+                try { ps.close(); } catch (Exception e) {}
+            }
+
+            MysqlConnection.closeConnection(conn);
+        }
+    }
+
+    public void deleteHandover(long id) throws Exception {
+
+        String sql = "DELETE FROM shift_handover WHERE id = ?";
+
+        Connection conn = null;
+        PreparedStatement ps = null;
+
+        try {
+            conn = MysqlConnection.getConnection();
+            ps = conn.prepareStatement(sql);
+
+            ps.setLong(1, id);
+            ps.executeUpdate();
+
+        } finally {
+            if (ps != null) {
+                try { ps.close(); } catch (Exception e) {}
+            }
+
+            MysqlConnection.closeConnection(conn);
+        }
+    }
+}
