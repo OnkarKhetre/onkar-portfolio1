@@ -1,23 +1,81 @@
-function reloadGgLag(){
-    var boxes = document.getElementsByClassName("gg-lag-content");
 
-    for(var i = 0; i < boxes.length; i++){
-        boxes[i].innerHTML =
-            "<div class='gg-loading-box'>" +
-            "<div class='loader'></div>" +
-            "<h3>Reloading GG Lag from PR-ARCHIVALDB...</h3>" +
-            "<p>This can take 4–5 minutes. You can continue using other tabs.</p>" +
-            "</div>";
+package com.dba.controller;
+
+import java.io.IOException;
+import java.time.LocalDate;
+import java.util.List;
+
+import com.dba.models.TeamLoginAudit;
+import com.dba.service.TeamMonitorService;
+
+import jakarta.servlet.ServletException;
+import jakarta.servlet.annotation.WebServlet;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
+
+@WebServlet("/teammembers")
+public class TeamMembersServlet extends HttpServlet {
+    private static final long serialVersionUID = 1L;
+
+    private TeamMonitorService service = new TeamMonitorService();
+
+    protected void doGet(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+
+        if (!isAdmin(request)) {
+            response.sendRedirect(request.getContextPath() + "/refreshstats");
+            return;
+        }
+
+        String dateFilter = request.getParameter("date");
+        String monitorFilter = request.getParameter("monitored");
+
+        if (dateFilter == null || dateFilter.trim().equals("")) {
+            dateFilter = LocalDate.now().toString();
+        }
+
+        if (monitorFilter == null || monitorFilter.trim().equals("")) {
+            monitorFilter = "ALL";
+        }
+
+        try {
+            List<TeamLoginAudit> teamLogins = service.getTeamLogins(dateFilter, monitorFilter);
+
+            request.setAttribute("teamLogins", teamLogins);
+            request.setAttribute("dateFilter", dateFilter);
+            request.setAttribute("monitorFilter", monitorFilter);
+
+            request.getRequestDispatcher("/teammembers.jsp").forward(request, response);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+
+            request.setAttribute("errorMsg", e.getMessage());
+            request.setAttribute("dateFilter", dateFilter);
+            request.setAttribute("monitorFilter", monitorFilter);
+
+            request.getRequestDispatcher("/teammembers.jsp").forward(request, response);
+        }
     }
 
-    var xhr = new XMLHttpRequest();
-    xhr.open("GET", "gglag?reload=true&ajax=true", true);
+    private boolean isAdmin(HttpServletRequest request) {
 
-    xhr.onreadystatechange = function(){
-        if(xhr.readyState === 4){
-            pollGgLag();
+        HttpSession session = request.getSession(false);
+
+        if (session == null) {
+            return false;
         }
-    };
 
-    xhr.send();
+        Object roleObj = session.getAttribute("loggedRole");
+
+        if (roleObj == null) {
+            return false;
+        }
+
+        String role = String.valueOf(roleObj);
+
+        return "ADMIN".equalsIgnoreCase(role) || "TEAM_LEAD".equalsIgnoreCase(role);
+    }
 }
