@@ -1,27 +1,41 @@
 <%@ page import="java.util.*" %>
 <%@ page import="java.time.LocalDate" %>
-<%@ page import="com.dba.models.HandoverEntry" %>
+<%@ page import="com.dba.models.TeamLoginAudit" %>
 <%@ page contentType="text/html;charset=UTF-8" language="java" %>
 
 <%
-    List<HandoverEntry> handovers = (List<HandoverEntry>) request.getAttribute("handovers");
+    List<TeamLoginAudit> teamLogins =
+            (List<TeamLoginAudit>) request.getAttribute("teamLogins");
+
     String dateFilter = (String) request.getAttribute("dateFilter");
-    String statusFilter = (String) request.getAttribute("statusFilter");
+    String monitorFilter = (String) request.getAttribute("monitorFilter");
     String errorMsg = (String) request.getAttribute("errorMsg");
 
-    if (handovers == null) {
-        handovers = new ArrayList<HandoverEntry>();
+    if (teamLogins == null) {
+        teamLogins = new ArrayList<TeamLoginAudit>();
     }
 
     if (dateFilter == null || dateFilter.trim().equals("")) {
         dateFilter = LocalDate.now().toString();
     }
 
-    if (statusFilter == null || statusFilter.trim().equals("")) {
-        statusFilter = "ALL";
+    if (monitorFilter == null || monitorFilter.trim().equals("")) {
+        monitorFilter = "ALL";
     }
 
     String ctx = request.getContextPath();
+
+    int total = teamLogins.size();
+    int monitoredCount = 0;
+    int notMonitoredCount = 0;
+
+    for (TeamLoginAudit t : teamLogins) {
+        if ("Y".equalsIgnoreCase(t.getMonitored())) {
+            monitoredCount++;
+        } else {
+            notMonitoredCount++;
+        }
+    }
 %>
 
 <%!
@@ -36,15 +50,14 @@
                 .replace("'", "&#39;");
     }
 
-    public String badgeClass(String value) {
-        if (value == null) return "badge-normal";
+    public String monitoredText(Object value) {
+        if (value == null) return "No";
+        return "Y".equalsIgnoreCase(String.valueOf(value)) ? "Yes" : "No";
+    }
 
-        if ("HIGH".equalsIgnoreCase(value)) return "badge-high";
-        if ("CRITICAL".equalsIgnoreCase(value)) return "badge-critical";
-        if ("DONE".equalsIgnoreCase(value)) return "badge-done";
-        if ("OPEN".equalsIgnoreCase(value)) return "badge-open";
-
-        return "badge-normal";
+    public String monitoredClass(Object value) {
+        if (value == null) return "badge-no";
+        return "Y".equalsIgnoreCase(String.valueOf(value)) ? "badge-yes" : "badge-no";
     }
 %>
 
@@ -52,7 +65,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Shift Handover - DBA Monitor</title>
+    <title>Team Members - DBA Monitor</title>
 
     <style>
         * {
@@ -62,29 +75,28 @@
         body {
             margin: 0;
             font-family: "Segoe UI", Arial, sans-serif;
+            min-height: 100vh;
             background:
                 radial-gradient(circle at top left, rgba(34,211,238,.14), transparent 32%),
                 linear-gradient(135deg, #08111f, #102033);
             color: #e5eefb;
-            min-height: 100vh;
         }
 
         .page {
-            padding: 24px;
+            padding: 26px;
         }
 
         .topbar {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 16px;
-            margin-bottom: 18px;
+            margin-bottom: 20px;
+            gap: 14px;
         }
 
         h1 {
             margin: 0;
             font-size: 28px;
-            letter-spacing: .2px;
         }
 
         .subtitle {
@@ -96,18 +108,39 @@
         .back-link {
             color: #22d3ee;
             text-decoration: none;
-            font-weight: 800;
+            font-weight: 900;
             background: rgba(34,211,238,.12);
             border: 1px solid rgba(34,211,238,.25);
             padding: 10px 14px;
             border-radius: 12px;
         }
 
-        .grid {
+        .summary-grid {
             display: grid;
-            grid-template-columns: 390px 1fr;
-            gap: 18px;
-            align-items: start;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 14px;
+            margin-bottom: 18px;
+        }
+
+        .summary-card {
+            background: rgba(15,23,42,.78);
+            border: 1px solid rgba(148,163,184,.22);
+            border-radius: 18px;
+            padding: 16px;
+            box-shadow: 0 18px 50px rgba(0,0,0,.25);
+        }
+
+        .summary-label {
+            color: #94a3b8;
+            font-size: 13px;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
+
+        .summary-value {
+            font-size: 32px;
+            font-weight: 900;
+            margin-top: 7px;
         }
 
         .card {
@@ -118,180 +151,102 @@
             box-shadow: 0 18px 50px rgba(0,0,0,.28);
         }
 
-        .card h2 {
-            margin: 0 0 14px;
-            font-size: 19px;
+        .filter-row {
+            display: flex;
+            align-items: end;
+            gap: 12px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
         }
 
         label {
             display: block;
-            margin-bottom: 6px;
-            font-size: 12px;
             color: #cbd5e1;
+            font-size: 12px;
             font-weight: 900;
             text-transform: uppercase;
+            margin-bottom: 6px;
         }
 
-        input, select, textarea {
-            width: 100%;
+        input, select {
+            height: 40px;
+            border-radius: 11px;
             border: 1px solid rgba(148,163,184,.30);
             background: rgba(2,6,23,.58);
             color: #e5eefb;
-            border-radius: 12px;
-            padding: 11px 12px;
+            padding: 0 12px;
             outline: none;
-            font-size: 14px;
-        }
-
-        textarea {
-            min-height: 125px;
-            resize: vertical;
-            line-height: 1.45;
-        }
-
-        .form-group {
-            margin-bottom: 13px;
-        }
-
-        .two-col {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 11px;
         }
 
         button {
+            height: 40px;
             border: none;
-            border-radius: 12px;
-            padding: 11px 15px;
+            border-radius: 11px;
             background: #22d3ee;
             color: #06202a;
             font-weight: 900;
+            padding: 0 16px;
             cursor: pointer;
         }
 
-        button:hover {
-            filter: brightness(1.08);
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            overflow: hidden;
+            border-radius: 14px;
         }
 
-        .btn-secondary {
-            background: rgba(148,163,184,.16);
-            color: #e5eefb;
-            border: 1px solid rgba(148,163,184,.24);
-        }
-
-        .btn-danger {
-            background: #ef4444;
-            color: white;
-        }
-
-        .btn-small {
-            padding: 7px 10px;
-            font-size: 12px;
-            border-radius: 9px;
-        }
-
-        .filter-row {
-            display: flex;
-            gap: 10px;
-            align-items: end;
-            margin-bottom: 14px;
-        }
-
-        .filter-row .field {
-            width: 180px;
-        }
-
-        .handover-list {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        .handover-item {
-            border: 1px solid rgba(148,163,184,.20);
-            background: rgba(2,6,23,.34);
-            border-radius: 17px;
-            padding: 14px;
-        }
-
-        .handover-head {
-            display: flex;
-            justify-content: space-between;
-            gap: 12px;
-            align-items: start;
-            margin-bottom: 9px;
-        }
-
-        .handover-title {
-            font-size: 17px;
-            font-weight: 900;
-            color: #f8fafc;
-            margin-bottom: 7px;
-        }
-
-        .handover-meta {
-            color: #94a3b8;
-            font-size: 12px;
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-
-        .handover-details {
-            margin-top: 10px;
-            color: #dbeafe;
+        th, td {
+            padding: 12px;
+            border-bottom: 1px solid rgba(148,163,184,.18);
             font-size: 14px;
-            line-height: 1.55;
-            white-space: pre-wrap;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        th {
+            background: rgba(2,6,23,.65);
+            color: #cbd5e1;
+            text-transform: uppercase;
+            font-size: 12px;
         }
 
         .badge {
             display: inline-flex;
             align-items: center;
-            padding: 5px 9px;
+            justify-content: center;
+            min-width: 58px;
+            padding: 6px 10px;
             border-radius: 999px;
-            font-size: 11px;
+            font-size: 12px;
             font-weight: 900;
-            letter-spacing: .2px;
         }
 
-        .badge-normal {
-            background: rgba(148,163,184,.18);
-            color: #cbd5e1;
+        .badge-yes {
+            background: rgba(34,197,94,.18);
+            color: #86efac;
         }
 
-        .badge-high {
-            background: rgba(245,158,11,.18);
-            color: #fbbf24;
-        }
-
-        .badge-critical {
+        .badge-no {
             background: rgba(239,68,68,.18);
             color: #fecaca;
         }
 
-        .badge-open {
-            background: rgba(34,211,238,.16);
+        .status-badge {
+            background: rgba(34,211,238,.14);
             color: #67e8f9;
         }
 
-        .badge-done {
-            background: rgba(34,197,94,.16);
-            color: #86efac;
-        }
-
-        .actions {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            justify-content: flex-end;
+        .muted {
+            color: #94a3b8;
+            font-size: 12px;
         }
 
         .empty {
-            padding: 28px;
+            padding: 26px;
             text-align: center;
             color: #94a3b8;
-            border: 1px dashed rgba(148,163,184,.28);
+            border: 1px dashed rgba(148,163,184,.30);
             border-radius: 16px;
         }
 
@@ -304,37 +259,27 @@
             margin-bottom: 14px;
         }
 
-        .shift-help {
-            margin-top: 12px;
-            padding: 12px;
-            border-radius: 14px;
-            background: rgba(34,211,238,.08);
-            border: 1px solid rgba(34,211,238,.18);
-            color: #cbd5e1;
-            font-size: 13px;
-            line-height: 1.5;
-        }
-
-        @media (max-width: 1000px) {
-            .grid {
+        @media(max-width: 900px) {
+            .summary-grid {
                 grid-template-columns: 1fr;
             }
 
-            .filter-row {
-                flex-wrap: wrap;
+            table {
+                font-size: 12px;
             }
         }
     </style>
 </head>
 
 <body>
+
 <div class="page">
 
     <div class="topbar">
         <div>
-            <h1>Shift Handover</h1>
+            <h1>Team Members Monitoring</h1>
             <div class="subtitle">
-                Morning: 07:30-15:30 | Second: 14:00-22:00 | Night: 22:00-07:00
+                Admin view for daily login and dashboard monitoring confirmation.
             </div>
         </div>
 
@@ -345,211 +290,85 @@
         <div class="error"><%= esc(errorMsg) %></div>
     <% } %>
 
-    <div class="grid">
+    <div class="summary-grid">
+        <div class="summary-card">
+            <div class="summary-label">Total Logins</div>
+            <div class="summary-value"><%= total %></div>
+        </div>
 
-        <div class="card">
-            <h2>Add Handover</h2>
+        <div class="summary-card">
+            <div class="summary-label">Monitored</div>
+            <div class="summary-value" style="color:#86efac;"><%= monitoredCount %></div>
+        </div>
 
-            <form method="post" action="<%= ctx %>/handover">
-                <input type="hidden" name="action" value="add">
-                <input type="hidden" name="dateFilter" value="<%= esc(dateFilter) %>">
+        <div class="summary-card">
+            <div class="summary-label">Not Monitored</div>
+            <div class="summary-value" style="color:#fecaca;"><%= notMonitoredCount %></div>
+        </div>
+    </div>
 
-                <div class="form-group">
-                    <label>Handover Date</label>
-                    <input type="date" name="handoverDate" value="<%= esc(dateFilter) %>" required>
-                </div>
+    <div class="card">
 
-                <div class="two-col">
-                    <div class="form-group">
-                        <label>From Shift</label>
-                        <select name="fromShift" id="fromShift" onchange="setToShift()" required>
-                            <option value="NIGHT">Night</option>
-                            <option value="MORNING">Morning</option>
-                            <option value="SECOND">Second</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label>To Shift</label>
-                        <select name="toShift" id="toShift" required>
-                            <option value="MORNING">Morning</option>
-                            <option value="SECOND">Second</option>
-                            <option value="NIGHT">Night</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="two-col">
-                    <div class="form-group">
-                        <label>Category</label>
-                        <select name="category">
-                            <option value="GENERAL">General</option>
-                            <option value="DATABASE">Database</option>
-                            <option value="BACKUP">Backup</option>
-                            <option value="TABLESPACE">Tablespace</option>
-                            <option value="USER">User</option>
-                            <option value="PARTITION">Partition</option>
-                            <option value="COMPRESSION">Compression</option>
-                            <option value="INCIDENT">Incident</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Priority</label>
-                        <select name="priority">
-                            <option value="NORMAL">Normal</option>
-                            <option value="HIGH">High</option>
-                            <option value="CRITICAL">Critical</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label>Title</label>
-                    <input type="text" name="title" placeholder="Example: Partition drop completed for MIDB" required>
-                </div>
-
-                <div class="form-group">
-                    <label>Details</label>
-                    <textarea name="details" placeholder="Write proper handover details, pending work, DB name, time, command/status, next action..." required></textarea>
-                </div>
-
-                <button type="submit" style="width:100%;">Save Handover</button>
-            </form>
-
-            <div class="shift-help">
-                <b>Rule:</b><br>
-                Night gives handover to Morning.<br>
-                Morning gives handover to Second.<br>
-                Second gives handover to Night.
+        <form method="get" action="<%= ctx %>/teammembers" class="filter-row">
+            <div>
+                <label>Date</label>
+                <input type="date" name="date" value="<%= esc(dateFilter) %>">
             </div>
-        </div>
 
-        <div class="card">
-            <h2>Handover Records</h2>
+            <div>
+                <label>Monitored</label>
+                <select name="monitored">
+                    <option value="ALL" <%= "ALL".equalsIgnoreCase(monitorFilter) ? "selected" : "" %>>All</option>
+                    <option value="Y" <%= "Y".equalsIgnoreCase(monitorFilter) ? "selected" : "" %>>Yes</option>
+                    <option value="N" <%= "N".equalsIgnoreCase(monitorFilter) ? "selected" : "" %>>No</option>
+                </select>
+            </div>
 
-            <form method="get" action="<%= ctx %>/handover" class="filter-row">
-                <div class="field">
-                    <label>Date</label>
-                    <input type="date" name="date" value="<%= esc(dateFilter) %>">
-                </div>
+            <button type="submit">Filter</button>
+            <a class="back-link" href="<%= ctx %>/teammembers">Today</a>
+        </form>
 
-                <div class="field">
-                    <label>Status</label>
-                    <select name="status">
-                        <option value="ALL" <%= "ALL".equalsIgnoreCase(statusFilter) ? "selected" : "" %>>All</option>
-                        <option value="OPEN" <%= "OPEN".equalsIgnoreCase(statusFilter) ? "selected" : "" %>>Open</option>
-                        <option value="DONE" <%= "DONE".equalsIgnoreCase(statusFilter) ? "selected" : "" %>>Done</option>
-                    </select>
-                </div>
+        <% if (teamLogins.isEmpty()) { %>
+            <div class="empty">
+                No team login records found for selected date/filter.
+            </div>
+        <% } else { %>
 
-                <button type="submit">Filter</button>
-                <a href="<%= ctx %>/handover" class="back-link">Today</a>
-            </form>
+            <table>
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Login Time</th>
+                        <th>Logout Time</th>
+                        <th>Status</th>
+                        <th>Monitored</th>
+                        <th>Monitored At</th>
+                        <th>Remarks</th>
+                        <th>IP Address</th>
+                    </tr>
+                </thead>
 
-            <% if (handovers.isEmpty()) { %>
-                <div class="empty">
-                    No handover entries found for selected date/status.
-                </div>
-            <% } else { %>
-                <div class="handover-list">
-                    <% for (HandoverEntry h : handovers) { %>
-                        <div class="handover-item">
-                            <div class="handover-head">
-                                <div>
-                                    <div class="handover-title"><%= esc(h.getTitle()) %></div>
+                <tbody>
+                <% for (TeamLoginAudit t : teamLogins) { %>
+                    <tr>
+                        <td><b><%= esc(t.getUsername()) %></b></td>
+                        <td><%= esc(t.getLoginTime()) %></td>
+                        <td><%= t.getLogoutTime() == null ? "<span class='muted'>Active / not logged out</span>" : esc(t.getLogoutTime()) %></td>
+                        <td><span class="badge status-badge"><%= esc(t.getStatus()) %></span></td>
+                        <td><span class="badge <%= monitoredClass(t.getMonitored()) %>"><%= monitoredText(t.getMonitored()) %></span></td>
+                        <td><%= t.getMonitoredAt() == null ? "<span class='muted'>-</span>" : esc(t.getMonitoredAt()) %></td>
+                        <td><%= t.getMonitorRemarks() == null ? "<span class='muted'>-</span>" : esc(t.getMonitorRemarks()) %></td>
+                        <td><%= esc(t.getIpAddress()) %></td>
+                    </tr>
+                <% } %>
+                </tbody>
+            </table>
 
-                                    <div class="handover-meta">
-                                        <span class="badge badge-normal"><%= esc(h.getHandoverDate()) %></span>
-                                        <span class="badge badge-normal"><%= esc(h.getFromShift()) %> → <%= esc(h.getToShift()) %></span>
-                                        <span class="badge badge-normal"><%= esc(h.getCategory()) %></span>
-                                        <span class="badge <%= badgeClass(h.getPriority()) %>"><%= esc(h.getPriority()) %></span>
-                                        <span class="badge <%= badgeClass(h.getStatus()) %>"><%= esc(h.getStatus()) %></span>
-                                    </div>
-                                </div>
-
-                                <div class="actions">
-                                    <% if ("OPEN".equalsIgnoreCase(h.getStatus())) { %>
-                                        <form method="post" action="<%= ctx %>/handover" style="margin:0;">
-                                            <input type="hidden" name="action" value="done">
-                                            <input type="hidden" name="id" value="<%= h.getId() %>">
-                                            <input type="hidden" name="dateFilter" value="<%= esc(dateFilter) %>">
-                                            <button class="btn-small" type="submit">Mark Done</button>
-                                        </form>
-                                    <% } else { %>
-                                        <form method="post" action="<%= ctx %>/handover" style="margin:0;">
-                                            <input type="hidden" name="action" value="open">
-                                            <input type="hidden" name="id" value="<%= h.getId() %>">
-                                            <input type="hidden" name="dateFilter" value="<%= esc(dateFilter) %>">
-                                            <button class="btn-small btn-secondary" type="submit">Reopen</button>
-                                        </form>
-                                    <% } %>
-
-                                    <form method="post" action="<%= ctx %>/handover" style="margin:0;" onsubmit="return confirm('Delete this handover entry?');">
-                                        <input type="hidden" name="action" value="delete">
-                                        <input type="hidden" name="id" value="<%= h.getId() %>">
-                                        <input type="hidden" name="dateFilter" value="<%= esc(dateFilter) %>">
-                                        <button class="btn-small btn-danger" type="submit">Delete</button>
-                                    </form>
-                                </div>
-                            </div>
-
-                            <div class="handover-details"><%= esc(h.getDetails()) %></div>
-
-                            <div class="handover-meta" style="margin-top:10px;">
-                                <span>Created by: <b><%= esc(h.getCreatedBy()) %></b></span>
-                                <span>Created: <%= esc(h.getCreatedAt()) %></span>
-                            </div>
-                        </div>
-                    <% } %>
-                </div>
-            <% } %>
-        </div>
+        <% } %>
 
     </div>
+
 </div>
-
-<script>
-function setToShift() {
-    var from = document.getElementById("fromShift").value;
-    var to = document.getElementById("toShift");
-
-    if (from === "NIGHT") {
-        to.value = "MORNING";
-    } else if (from === "MORNING") {
-        to.value = "SECOND";
-    } else if (from === "SECOND") {
-        to.value = "NIGHT";
-    }
-}
-
-function setDefaultShiftByTime() {
-    var now = new Date();
-    var hour = now.getHours();
-    var minute = now.getMinutes();
-    var total = hour * 60 + minute;
-
-    var from = document.getElementById("fromShift");
-
-    /*
-       End-time based default:
-       06:00-09:30  => Night to Morning
-       14:30-16:30  => Morning to Second
-       21:00-23:30  => Second to Night
-    */
-    if (total >= 360 && total <= 570) {
-        from.value = "NIGHT";
-    } else if (total >= 870 && total <= 990) {
-        from.value = "MORNING";
-    } else if (total >= 1260 && total <= 1410) {
-        from.value = "SECOND";
-    }
-
-    setToShift();
-}
-
-setDefaultShiftByTime();
-</script>
 
 </body>
 </html>
