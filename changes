@@ -1,19 +1,31 @@
-.monitor-btn{
-    height:36px;
-    display:flex;
-    align-items:center;
-    padding:0 13px;
-    border-radius:999px;
-    border:1px solid rgba(34,197,94,.35);
-    background:rgba(34,197,94,.12);
-    color:#22c55e;
-    font-size:13px;
-    font-weight:900;
-    cursor:pointer;
-    white-space:nowrap;
-}
+function markDashboardMonitored(){
+    var remarks = prompt("Enter monitoring remarks:", "Dashboard monitored");
 
-.monitor-btn:hover{
-    background:#22c55e;
-    color:white;
+    if(remarks === null){
+        return;
+    }
+
+    var xhr = new XMLHttpRequest();
+    xhr.open("POST", "<%= request.getContextPath() %>/markmonitor", true);
+    xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+
+    xhr.onreadystatechange = function(){
+        if(xhr.readyState === 4){
+            if(xhr.status === 200){
+                var btn = document.getElementById("monitorBtn");
+                if(btn){
+                    btn.innerHTML = "✅ Monitored";
+                    btn.disabled = true;
+                    btn.style.opacity = "0.8";
+                    btn.style.cursor = "default";
+                }
+
+                alert("Monitoring marked successfully.");
+            }else{
+                alert("Failed to mark monitoring: " + xhr.responseText);
+            }
+        }
+    };
+
+    xhr.send("remarks=" + encodeURIComponent(remarks));
 }
