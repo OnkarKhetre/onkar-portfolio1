@@ -77,3 +77,10 @@ CREATE TABLE IF NOT EXISTS shift_handover (
     INDEX idx_handover_status (status),
     INDEX idx_handover_shift (from_shift, to_shift)
 );
+
+USE dba_monitor;
+
+ALTER TABLE login_audit
+ADD COLUMN monitored CHAR(1) DEFAULT 'N',
+ADD COLUMN monitored_at DATETIME,
+ADD COLUMN monitor_remarks VARCHAR(500);
