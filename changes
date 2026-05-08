@@ -1,42 +1,6 @@
-<aside class="sidebar">
-    <div class="logo">
-        <div class="logo-icon">DB</div>
-        <div>DBA&nbsp;<span>MONITOR</span></div>
-    </div>
+<div class="nav-section-title">TASK MANAGEMENT</div>
 
-    <nav class="menu">
-        <div class="menu-title">Database Health</div>
-
-        <a href="javascript:void(0)" onclick="goSelected('fetchstats')" class="<%= hasSingleData ? "active" : "" %>">
-            <span class="nav-icon">📊</span>
-            <span>Stats / FRA</span>
-        </a>
-
-        <a href="javascript:void(0)" onclick="goSelected('tablespaces.jsp')">
-            <span class="nav-icon">💾</span>
-            <span>Tablespaces</span>
-        </a>
-
-        <a href="javascript:void(0)" onclick="goSelected('alertlogs.jsp')">
-            <span class="nav-icon">⚠️</span>
-            <span>Alert Logs</span>
-        </a>
-
-        <a href="javascript:void(0)" onclick="goSelected('gglag.jsp')">
-            <span class="nav-icon">🔁</span>
-            <span>GG Lag</span>
-        </a>
-
-        <div class="menu-title">User Management</div>
-
-        <a href="javascript:void(0)" onclick="goSelected('users.jsp')">
-            <span class="nav-icon">👥</span>
-            <span>All Users</span>
-        </a>
-
-        <a href="javascript:void(0)" onclick="goSelected('sessions.jsp')">
-            <span class="nav-icon">🟢</span>
-            <span>Active Sessions</span>
-        </a>
-    </nav>
-</aside>
+<a href="<%= request.getContextPath() %>/handover" class="nav-item">
+    <span class="nav-icon">📝</span>
+    <span>Handover</span>
+</a>
