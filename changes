@@ -1,31 +1,16 @@
-function markDashboardMonitored(){
-    var remarks = prompt("Enter monitoring remarks:", "Dashboard monitored");
 
-    if(remarks === null){
-        return;
-    }
+<%
+String roleForMenu = String.valueOf(session.getAttribute("loggedRole"));
+if("ADMIN".equalsIgnoreCase(roleForMenu) || "TEAM_LEAD".equalsIgnoreCase(roleForMenu)){
+%>
 
-    var xhr = new XMLHttpRequest();
-    xhr.open("POST", "<%= request.getContextPath() %>/markmonitor", true);
-    xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+<div class="nav-section-title">ADMIN</div>
 
-    xhr.onreadystatechange = function(){
-        if(xhr.readyState === 4){
-            if(xhr.status === 200){
-                var btn = document.getElementById("monitorBtn");
-                if(btn){
-                    btn.innerHTML = "✅ Monitored";
-                    btn.disabled = true;
-                    btn.style.opacity = "0.8";
-                    btn.style.cursor = "default";
-                }
+<a href="<%= request.getContextPath() %>/teammembers" class="nav-item">
+    <span class="nav-icon">👨‍💼</span>
+    <span>Team Members</span>
+</a>
 
-                alert("Monitoring marked successfully.");
-            }else{
-                alert("Failed to mark monitoring: " + xhr.responseText);
-            }
-        }
-    };
-
-    xhr.send("remarks=" + encodeURIComponent(remarks));
+<%
 }
+%>
