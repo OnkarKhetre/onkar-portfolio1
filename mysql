@@ -84,3 +84,60 @@ ALTER TABLE login_audit
 ADD COLUMN monitored CHAR(1) DEFAULT 'N',
 ADD COLUMN monitored_at DATETIME,
 ADD COLUMN monitor_remarks VARCHAR(500);
+
+
+
+USE dba_monitor;
+
+CREATE TABLE IF NOT EXISTS task_items (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+
+    source_type VARCHAR(30) DEFAULT 'MANUAL',
+    source_key VARCHAR(200),
+    active_key VARCHAR(200),
+
+    site VARCHAR(20),
+    target VARCHAR(40),
+    object_type VARCHAR(40),
+    object_name VARCHAR(100),
+
+    title VARCHAR(250) NOT NULL,
+    description TEXT,
+    priority VARCHAR(20) DEFAULT 'NORMAL',
+
+    status VARCHAR(30) DEFAULT 'OPEN',
+
+    assigned_to VARCHAR(80),
+    assigned_by VARCHAR(80),
+    assigned_at DATETIME,
+
+    created_by VARCHAR(80),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+    completed_by VARCHAR(80),
+    completed_at DATETIME,
+    completion_remarks TEXT,
+
+    reassign_count INT DEFAULT 0,
+
+    UNIQUE KEY uq_active_task (active_key),
+    INDEX idx_task_status (status),
+    INDEX idx_task_assigned_to (assigned_to),
+    INDEX idx_task_created_at (created_at),
+    INDEX idx_task_source_key (source_key)
+);
+
+CREATE TABLE IF NOT EXISTS task_history (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    task_id BIGINT NOT NULL,
+    action VARCHAR(50),
+    old_status VARCHAR(30),
+    new_status VARCHAR(30),
+    old_assigned_to VARCHAR(80),
+    new_assigned_to VARCHAR(80),
+    action_by VARCHAR(80),
+    remarks TEXT,
+    action_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+    INDEX idx_history_task (task_id)
+);
