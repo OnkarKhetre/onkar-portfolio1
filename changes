@@ -1,4 +1,10 @@
-<a href="<%= request.getContextPath() %>/taskmanager" class="nav-item">
-    <span class="nav-icon">📌</span>
-    <span>Task Manager</span>
-</a>
+
+<div class="field">
+    <label>Completed From</label>
+    <input type="date" name="completedFrom" value="<%= esc(completedFrom) %>">
+</div>
+
+<div class="field">
+    <label>Completed To</label>
+    <input type="date" name="completedTo" value="<%= esc(completedTo) %>">
+</div>
