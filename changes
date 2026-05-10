@@ -1,10 +1,89 @@
+package com.dba.controller;
 
-<div class="field">
-    <label>Completed From</label>
-    <input type="date" name="completedFrom" value="<%= esc(completedFrom) %>">
-</div>
+import java.io.IOException;
+import java.time.LocalDate;
+import java.util.List;
 
-<div class="field">
-    <label>Completed To</label>
-    <input type="date" name="completedTo" value="<%= esc(completedTo) %>">
-</div>
+import com.dba.models.TaskPerformance;
+import com.dba.service.TaskPerformanceService;
+
+import jakarta.servlet.ServletException;
+import jakarta.servlet.annotation.WebServlet;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
+
+@WebServlet("/taskperformance")
+public class TaskPerformanceServlet extends HttpServlet {
+    private static final long serialVersionUID = 1L;
+
+    private TaskPerformanceService service = new TaskPerformanceService();
+
+    protected void doGet(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+
+        if (!isAdmin(request)) {
+            response.sendRedirect(request.getContextPath() + "/refreshstats");
+            return;
+        }
+
+        String fromDate = request.getParameter("fromDate");
+        String toDate = request.getParameter("toDate");
+        String user = request.getParameter("user");
+
+        if (fromDate == null || fromDate.trim().equals("")) {
+            fromDate = LocalDate.now().minusDays(7).toString();
+        }
+
+        if (toDate == null || toDate.trim().equals("")) {
+            toDate = LocalDate.now().toString();
+        }
+
+        if (user == null || user.trim().equals("")) {
+            user = "ALL";
+        }
+
+        try {
+            List<TaskPerformance> performanceList = service.getPerformance(fromDate, toDate, user);
+            List<String> users = service.getActiveUsers();
+
+            request.setAttribute("performanceList", performanceList);
+            request.setAttribute("users", users);
+            request.setAttribute("fromDate", fromDate);
+            request.setAttribute("toDate", toDate);
+            request.setAttribute("userFilter", user);
+
+            request.getRequestDispatcher("/taskperformance.jsp").forward(request, response);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+
+            request.setAttribute("errorMsg", e.getMessage());
+            request.setAttribute("fromDate", fromDate);
+            request.setAttribute("toDate", toDate);
+            request.setAttribute("userFilter", user);
+
+            request.getRequestDispatcher("/taskperformance.jsp").forward(request, response);
+        }
+    }
+
+    private boolean isAdmin(HttpServletRequest request) {
+
+        HttpSession session = request.getSession(false);
+
+        if (session == null) {
+            return false;
+        }
+
+        Object roleObj = session.getAttribute("loggedRole");
+
+        if (roleObj == null) {
+            return false;
+        }
+
+        String role = String.valueOf(roleObj);
+
+        return "ADMIN".equalsIgnoreCase(role) || "TEAM_LEAD".equalsIgnoreCase(role);
+    }
+}
