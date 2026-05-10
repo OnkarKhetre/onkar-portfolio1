@@ -1,16 +1,4 @@
-
-<%
-String roleForMenu = String.valueOf(session.getAttribute("loggedRole"));
-if("ADMIN".equalsIgnoreCase(roleForMenu) || "TEAM_LEAD".equalsIgnoreCase(roleForMenu)){
-%>
-
-<div class="nav-section-title">ADMIN</div>
-
-<a href="<%= request.getContextPath() %>/teammembers" class="nav-item">
-    <span class="nav-icon">👨‍💼</span>
-    <span>Team Members</span>
+<a href="<%= request.getContextPath() %>/taskmanager" class="nav-item">
+    <span class="nav-icon">📌</span>
+    <span>Task Manager</span>
 </a>
-
-<%
-}
-%>
