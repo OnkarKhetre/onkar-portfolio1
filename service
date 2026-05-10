@@ -3,146 +3,62 @@ package com.dba.service;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
 import com.dba.connection.MysqlConnection;
-import com.dba.models.TaskItem;
+import com.dba.models.TaskPerformance;
 
-public class TaskService {
+public class TaskPerformanceService {
 
-    public List<String> getActiveUsers() throws Exception {
+    public List<TaskPerformance> getPerformance(String fromDate, String toDate, String userFilter) throws Exception {
 
-        List<String> users = new ArrayList<String>();
-
-        String sql =
-                "SELECT username FROM app_users " +
-                "WHERE active = 'Y' " +
-                "ORDER BY username";
-
-        Connection conn = null;
-        PreparedStatement ps = null;
-        ResultSet rs = null;
-
-        try {
-            conn = MysqlConnection.getConnection();
-            ps = conn.prepareStatement(sql);
-            rs = ps.executeQuery();
-
-            while (rs.next()) {
-                users.add(rs.getString("username"));
-            }
-
-        } finally {
-            if (rs != null) try { rs.close(); } catch (Exception e) {}
-            if (ps != null) try { ps.close(); } catch (Exception e) {}
-            MysqlConnection.closeConnection(conn);
-        }
-
-        return users;
-    }
-
-    public long createTask(TaskItem task, String actor) throws Exception {
-
-        String assignedTo = clean(task.getAssignedTo());
-
-        String status = assignedTo.equals("") ? "OPEN" : "ASSIGNED";
+        List<TaskPerformance> list = new ArrayList<TaskPerformance>();
 
         String sql =
-                "INSERT INTO task_items " +
-                "(source_type, site, target, object_type, object_name, title, description, priority, status, " +
-                "assigned_to, assigned_by, assigned_at, created_by) " +
-                "VALUES ('MANUAL', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, " +
-                (assignedTo.equals("") ? "NULL" : "NOW()") + ", ?)";
+            "SELECT u.username, " +
 
-        Connection conn = null;
-        PreparedStatement ps = null;
-        ResultSet keys = null;
+            "SUM(CASE WHEN t.created_by = u.username THEN 1 ELSE 0 END) AS created_tasks, " +
 
-        try {
-            conn = MysqlConnection.getConnection();
-            ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
+            "SUM(CASE WHEN t.assigned_to = u.username THEN 1 ELSE 0 END) AS assigned_tasks, " +
 
-            ps.setString(1, clean(task.getSite()));
-            ps.setString(2, clean(task.getTarget()));
-            ps.setString(3, clean(task.getObjectType()));
-            ps.setString(4, clean(task.getObjectName()));
-            ps.setString(5, task.getTitle());
-            ps.setString(6, task.getDescription());
-            ps.setString(7, clean(task.getPriority()).equals("") ? "NORMAL" : clean(task.getPriority()));
-            ps.setString(8, status);
+            "SUM(CASE WHEN t.completed_by = u.username THEN 1 ELSE 0 END) AS completed_tasks, " +
 
-            if (assignedTo.equals("")) {
-                ps.setString(9, null);
-                ps.setString(10, null);
-            } else {
-                ps.setString(9, assignedTo);
-                ps.setString(10, actor);
-            }
+            "SUM(CASE WHEN t.assigned_to = u.username AND t.status <> 'DONE' AND t.status <> 'CANCELLED' THEN 1 ELSE 0 END) AS pending_tasks, " +
 
-            ps.setString(11, actor);
+            "SUM(CASE WHEN t.completed_by = u.username AND t.priority = 'CRITICAL' THEN 1 ELSE 0 END) AS critical_completed, " +
 
-            ps.executeUpdate();
+            "SUM(CASE WHEN t.completed_by = u.username AND t.priority = 'HIGH' THEN 1 ELSE 0 END) AS high_completed, " +
 
-            keys = ps.getGeneratedKeys();
+            "SUM(CASE WHEN t.assigned_to = u.username THEN IFNULL(t.reassign_count,0) ELSE 0 END) AS total_reassign_count, " +
 
-            long taskId = -1;
+            "IFNULL(AVG(CASE WHEN t.completed_by = u.username AND t.completed_at IS NOT NULL " +
+            "THEN TIMESTAMPDIFF(MINUTE, t.created_at, t.completed_at) END),0) AS avg_completion_minutes " +
 
-            if (keys.next()) {
-                taskId = keys.getLong(1);
-            }
-
-            logHistory(conn, taskId, "CREATE", null, status, null, assignedTo, actor, "Manual task created");
-
-            return taskId;
-
-        } finally {
-            if (keys != null) try { keys.close(); } catch (Exception e) {}
-            if (ps != null) try { ps.close(); } catch (Exception e) {}
-            MysqlConnection.closeConnection(conn);
-        }
-    }
-
-    public List<TaskItem> getTasks(String statusFilter, String assignedFilter, String priorityFilter) throws Exception {
-
-        List<TaskItem> list = new ArrayList<TaskItem>();
-
-        String sql =
-                "SELECT id, source_type, source_key, active_key, site, target, object_type, object_name, " +
-                "title, description, priority, status, assigned_to, assigned_by, assigned_at, created_by, created_at, " +
-                "completed_by, completed_at, completion_remarks, reassign_count " +
-                "FROM task_items WHERE 1=1 ";
+            "FROM app_users u " +
+            "LEFT JOIN task_items t ON " +
+            "(t.created_by = u.username OR t.assigned_to = u.username OR t.completed_by = u.username) ";
 
         List<String> params = new ArrayList<String>();
 
-        if (statusFilter != null && statusFilter.trim().length() > 0
-                && !"ALL".equalsIgnoreCase(statusFilter)) {
-            sql += "AND status = ? ";
-            params.add(statusFilter.trim().toUpperCase());
+        sql += "WHERE u.active = 'Y' ";
+
+        if (fromDate != null && fromDate.trim().length() > 0) {
+            sql += "AND DATE(IFNULL(t.created_at, NOW())) >= ? ";
+            params.add(fromDate.trim());
         }
 
-        if (assignedFilter != null && assignedFilter.trim().length() > 0
-                && !"ALL".equalsIgnoreCase(assignedFilter)) {
-
-            if ("UNASSIGNED".equalsIgnoreCase(assignedFilter)) {
-                sql += "AND (assigned_to IS NULL OR assigned_to = '') ";
-            } else {
-                sql += "AND assigned_to = ? ";
-                params.add(assignedFilter.trim());
-            }
+        if (toDate != null && toDate.trim().length() > 0) {
+            sql += "AND DATE(IFNULL(t.created_at, NOW())) <= ? ";
+            params.add(toDate.trim());
         }
 
-        if (priorityFilter != null && priorityFilter.trim().length() > 0
-                && !"ALL".equalsIgnoreCase(priorityFilter)) {
-            sql += "AND priority = ? ";
-            params.add(priorityFilter.trim().toUpperCase());
+        if (userFilter != null && userFilter.trim().length() > 0 && !"ALL".equalsIgnoreCase(userFilter)) {
+            sql += "AND u.username = ? ";
+            params.add(userFilter.trim());
         }
 
-        sql += "ORDER BY " +
-               "CASE status WHEN 'OPEN' THEN 1 WHEN 'ASSIGNED' THEN 2 WHEN 'IN_PROGRESS' THEN 3 WHEN 'DONE' THEN 4 ELSE 5 END, " +
-               "CASE priority WHEN 'CRITICAL' THEN 1 WHEN 'HIGH' THEN 2 WHEN 'NORMAL' THEN 3 ELSE 4 END, " +
-               "created_at DESC";
+        sql += "GROUP BY u.username ORDER BY completed_tasks DESC, pending_tasks ASC, u.username";
 
         Connection conn = null;
         PreparedStatement ps = null;
@@ -159,25 +75,43 @@ public class TaskService {
             rs = ps.executeQuery();
 
             while (rs.next()) {
-                list.add(mapTask(rs));
+                TaskPerformance p = new TaskPerformance();
+
+                p.setUsername(rs.getString("username"));
+                p.setCreatedTasks(rs.getInt("created_tasks"));
+                p.setAssignedTasks(rs.getInt("assigned_tasks"));
+                p.setCompletedTasks(rs.getInt("completed_tasks"));
+                p.setPendingTasks(rs.getInt("pending_tasks"));
+                p.setCriticalCompleted(rs.getInt("critical_completed"));
+                p.setHighCompleted(rs.getInt("high_completed"));
+                p.setTotalReassignCount(rs.getInt("total_reassign_count"));
+
+                double minutes = rs.getDouble("avg_completion_minutes");
+                p.setAvgCompletionHours(minutes / 60.0);
+
+                list.add(p);
             }
 
         } finally {
-            if (rs != null) try { rs.close(); } catch (Exception e) {}
-            if (ps != null) try { ps.close(); } catch (Exception e) {}
+            if (rs != null) {
+                try { rs.close(); } catch (Exception e) {}
+            }
+
+            if (ps != null) {
+                try { ps.close(); } catch (Exception e) {}
+            }
+
             MysqlConnection.closeConnection(conn);
         }
 
         return list;
     }
 
-    public TaskItem getTaskById(long id) throws Exception {
+    public List<String> getActiveUsers() throws Exception {
 
-        String sql =
-                "SELECT id, source_type, source_key, active_key, site, target, object_type, object_name, " +
-                "title, description, priority, status, assigned_to, assigned_by, assigned_at, created_by, created_at, " +
-                "completed_by, completed_at, completion_remarks, reassign_count " +
-                "FROM task_items WHERE id = ?";
+        List<String> users = new ArrayList<String>();
+
+        String sql = "SELECT username FROM app_users WHERE active = 'Y' ORDER BY username";
 
         Connection conn = null;
         PreparedStatement ps = null;
@@ -186,250 +120,24 @@ public class TaskService {
         try {
             conn = MysqlConnection.getConnection();
             ps = conn.prepareStatement(sql);
-            ps.setLong(1, id);
             rs = ps.executeQuery();
 
-            if (rs.next()) {
-                return mapTask(rs);
+            while (rs.next()) {
+                users.add(rs.getString("username"));
             }
 
         } finally {
-            if (rs != null) try { rs.close(); } catch (Exception e) {}
-            if (ps != null) try { ps.close(); } catch (Exception e) {}
+            if (rs != null) {
+                try { rs.close(); } catch (Exception e) {}
+            }
+
+            if (ps != null) {
+                try { ps.close(); } catch (Exception e) {}
+            }
+
             MysqlConnection.closeConnection(conn);
         }
 
-        return null;
-    }
-
-    public void takeTask(long id, String actor) throws Exception {
-
-        TaskItem oldTask = getTaskById(id);
-
-        String sql =
-                "UPDATE task_items " +
-                "SET assigned_to = ?, assigned_by = ?, assigned_at = NOW(), status = 'IN_PROGRESS' " +
-                "WHERE id = ? AND status <> 'DONE'";
-
-        Connection conn = null;
-        PreparedStatement ps = null;
-
-        try {
-            conn = MysqlConnection.getConnection();
-            ps = conn.prepareStatement(sql);
-
-            ps.setString(1, actor);
-            ps.setString(2, actor);
-            ps.setLong(3, id);
-
-            ps.executeUpdate();
-
-            logHistory(conn, id, "TAKE", oldTask == null ? null : oldTask.getStatus(), "IN_PROGRESS",
-                    oldTask == null ? null : oldTask.getAssignedTo(), actor, actor, "Task taken by user");
-
-        } finally {
-            if (ps != null) try { ps.close(); } catch (Exception e) {}
-            MysqlConnection.closeConnection(conn);
-        }
-    }
-
-    public void assignTask(long id, String assignedTo, String actor, String remarks) throws Exception {
-
-        TaskItem oldTask = getTaskById(id);
-
-        String oldAssigned = oldTask == null ? null : oldTask.getAssignedTo();
-        String oldStatus = oldTask == null ? null : oldTask.getStatus();
-
-        String newStatus = "ASSIGNED";
-
-        String sql =
-                "UPDATE task_items " +
-                "SET assigned_to = ?, assigned_by = ?, assigned_at = NOW(), status = ?, " +
-                "reassign_count = CASE WHEN assigned_to IS NULL OR assigned_to = '' THEN reassign_count ELSE reassign_count + 1 END " +
-                "WHERE id = ? AND status <> 'DONE'";
-
-        Connection conn = null;
-        PreparedStatement ps = null;
-
-        try {
-            conn = MysqlConnection.getConnection();
-            ps = conn.prepareStatement(sql);
-
-            ps.setString(1, assignedTo);
-            ps.setString(2, actor);
-            ps.setString(3, newStatus);
-            ps.setLong(4, id);
-
-            ps.executeUpdate();
-
-            logHistory(conn, id, "ASSIGN_REASSIGN", oldStatus, newStatus,
-                    oldAssigned, assignedTo, actor, remarks);
-
-        } finally {
-            if (ps != null) try { ps.close(); } catch (Exception e) {}
-            MysqlConnection.closeConnection(conn);
-        }
-    }
-
-    public void completeTask(long id, String actor, String remarks) throws Exception {
-
-        TaskItem oldTask = getTaskById(id);
-
-        String sql =
-                "UPDATE task_items " +
-                "SET status = 'DONE', completed_by = ?, completed_at = NOW(), completion_remarks = ?, active_key = NULL " +
-                "WHERE id = ?";
-
-        Connection conn = null;
-        PreparedStatement ps = null;
-
-        try {
-            conn = MysqlConnection.getConnection();
-            ps = conn.prepareStatement(sql);
-
-            ps.setString(1, actor);
-            ps.setString(2, remarks);
-            ps.setLong(3, id);
-
-            ps.executeUpdate();
-
-            logHistory(conn, id, "COMPLETE", oldTask == null ? null : oldTask.getStatus(), "DONE",
-                    oldTask == null ? null : oldTask.getAssignedTo(),
-                    oldTask == null ? null : oldTask.getAssignedTo(),
-                    actor, remarks);
-
-        } finally {
-            if (ps != null) try { ps.close(); } catch (Exception e) {}
-            MysqlConnection.closeConnection(conn);
-        }
-    }
-
-    public void reopenTask(long id, String actor, String remarks) throws Exception {
-
-        TaskItem oldTask = getTaskById(id);
-
-        String sql =
-                "UPDATE task_items " +
-                "SET status = 'OPEN', completed_by = NULL, completed_at = NULL, completion_remarks = NULL " +
-                "WHERE id = ?";
-
-        Connection conn = null;
-        PreparedStatement ps = null;
-
-        try {
-            conn = MysqlConnection.getConnection();
-            ps = conn.prepareStatement(sql);
-
-            ps.setLong(1, id);
-
-            ps.executeUpdate();
-
-            logHistory(conn, id, "REOPEN", oldTask == null ? null : oldTask.getStatus(), "OPEN",
-                    oldTask == null ? null : oldTask.getAssignedTo(),
-                    oldTask == null ? null : oldTask.getAssignedTo(),
-                    actor, remarks);
-
-        } finally {
-            if (ps != null) try { ps.close(); } catch (Exception e) {}
-            MysqlConnection.closeConnection(conn);
-        }
-    }
-
-    public void cancelTask(long id, String actor, String remarks) throws Exception {
-
-        TaskItem oldTask = getTaskById(id);
-
-        String sql =
-                "UPDATE task_items " +
-                "SET status = 'CANCELLED', active_key = NULL " +
-                "WHERE id = ?";
-
-        Connection conn = null;
-        PreparedStatement ps = null;
-
-        try {
-            conn = MysqlConnection.getConnection();
-            ps = conn.prepareStatement(sql);
-
-            ps.setLong(1, id);
-
-            ps.executeUpdate();
-
-            logHistory(conn, id, "CANCEL", oldTask == null ? null : oldTask.getStatus(), "CANCELLED",
-                    oldTask == null ? null : oldTask.getAssignedTo(),
-                    oldTask == null ? null : oldTask.getAssignedTo(),
-                    actor, remarks);
-
-        } finally {
-            if (ps != null) try { ps.close(); } catch (Exception e) {}
-            MysqlConnection.closeConnection(conn);
-        }
-    }
-
-    private void logHistory(Connection conn, long taskId, String action, String oldStatus, String newStatus,
-                            String oldAssignedTo, String newAssignedTo, String actionBy, String remarks) throws Exception {
-
-        if (taskId <= 0) {
-            return;
-        }
-
-        String sql =
-                "INSERT INTO task_history " +
-                "(task_id, action, old_status, new_status, old_assigned_to, new_assigned_to, action_by, remarks) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-
-        PreparedStatement ps = null;
-
-        try {
-            ps = conn.prepareStatement(sql);
-
-            ps.setLong(1, taskId);
-            ps.setString(2, action);
-            ps.setString(3, oldStatus);
-            ps.setString(4, newStatus);
-            ps.setString(5, oldAssignedTo);
-            ps.setString(6, newAssignedTo);
-            ps.setString(7, actionBy);
-            ps.setString(8, remarks);
-
-            ps.executeUpdate();
-
-        } finally {
-            if (ps != null) try { ps.close(); } catch (Exception e) {}
-        }
-    }
-
-    private TaskItem mapTask(ResultSet rs) throws Exception {
-
-        TaskItem t = new TaskItem();
-
-        t.setId(rs.getLong("id"));
-        t.setSourceType(rs.getString("source_type"));
-        t.setSourceKey(rs.getString("source_key"));
-        t.setActiveKey(rs.getString("active_key"));
-        t.setSite(rs.getString("site"));
-        t.setTarget(rs.getString("target"));
-        t.setObjectType(rs.getString("object_type"));
-        t.setObjectName(rs.getString("object_name"));
-        t.setTitle(rs.getString("title"));
-        t.setDescription(rs.getString("description"));
-        t.setPriority(rs.getString("priority"));
-        t.setStatus(rs.getString("status"));
-        t.setAssignedTo(rs.getString("assigned_to"));
-        t.setAssignedBy(rs.getString("assigned_by"));
-        t.setAssignedAt(rs.getTimestamp("assigned_at"));
-        t.setCreatedBy(rs.getString("created_by"));
-        t.setCreatedAt(rs.getTimestamp("created_at"));
-        t.setCompletedBy(rs.getString("completed_by"));
-        t.setCompletedAt(rs.getTimestamp("completed_at"));
-        t.setCompletionRemarks(rs.getString("completion_remarks"));
-        t.setReassignCount(rs.getInt("reassign_count"));
-
-        return t;
-    }
-
-    private String clean(String value) {
-        if (value == null) return "";
-        return value.trim().toUpperCase();
+        return users;
     }
 }
