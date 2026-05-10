@@ -1,32 +1,37 @@
 <%@ page import="java.util.*" %>
-<%@ page import="com.dba.models.TaskItem" %>
+<%@ page import="com.dba.models.TaskPerformance" %>
 <%@ page contentType="text/html;charset=UTF-8" language="java" %>
 
 <%
-    List<TaskItem> tasks = (List<TaskItem>) request.getAttribute("tasks");
+    List<TaskPerformance> performanceList =
+            (List<TaskPerformance>) request.getAttribute("performanceList");
+
     List<String> users = (List<String>) request.getAttribute("users");
 
-    String statusFilter = (String) request.getAttribute("statusFilter");
-    String assignedFilter = (String) request.getAttribute("assignedFilter");
-    String priorityFilter = (String) request.getAttribute("priorityFilter");
+    String fromDate = (String) request.getAttribute("fromDate");
+    String toDate = (String) request.getAttribute("toDate");
+    String userFilter = (String) request.getAttribute("userFilter");
     String errorMsg = (String) request.getAttribute("errorMsg");
 
-    if (tasks == null) tasks = new ArrayList<TaskItem>();
+    if (performanceList == null) performanceList = new ArrayList<TaskPerformance>();
     if (users == null) users = new ArrayList<String>();
-
-    if (statusFilter == null) statusFilter = "ALL";
-    if (assignedFilter == null) assignedFilter = "ALL";
-    if (priorityFilter == null) priorityFilter = "ALL";
+    if (fromDate == null) fromDate = "";
+    if (toDate == null) toDate = "";
+    if (userFilter == null) userFilter = "ALL";
 
     String ctx = request.getContextPath();
 
-    String loggedUser = String.valueOf(session.getAttribute("username"));
-    if(loggedUser == null || loggedUser.equals("null")){
-        loggedUser = String.valueOf(session.getAttribute("loggedUser"));
-    }
+    int totalCompleted = 0;
+    int totalPending = 0;
+    int totalAssigned = 0;
+    int totalCritical = 0;
 
-    String loggedRole = String.valueOf(session.getAttribute("loggedRole"));
-    boolean isAdmin = "ADMIN".equalsIgnoreCase(loggedRole) || "TEAM_LEAD".equalsIgnoreCase(loggedRole);
+    for (TaskPerformance p : performanceList) {
+        totalCompleted += p.getCompletedTasks();
+        totalPending += p.getPendingTasks();
+        totalAssigned += p.getAssignedTasks();
+        totalCritical += p.getCriticalCompleted();
+    }
 %>
 
 <%!
@@ -41,316 +46,214 @@
                 .replace("'", "&#39;");
     }
 
-    public String badgeClass(String value) {
-        if (value == null) return "badge-normal";
-
-        if ("CRITICAL".equalsIgnoreCase(value)) return "badge-critical";
-        if ("HIGH".equalsIgnoreCase(value)) return "badge-high";
-        if ("DONE".equalsIgnoreCase(value)) return "badge-done";
-        if ("OPEN".equalsIgnoreCase(value)) return "badge-open";
-        if ("ASSIGNED".equalsIgnoreCase(value)) return "badge-assigned";
-        if ("IN_PROGRESS".equalsIgnoreCase(value)) return "badge-progress";
-        if ("CANCELLED".equalsIgnoreCase(value)) return "badge-cancelled";
-
-        return "badge-normal";
-    }
-
-    public boolean blank(String value) {
-        return value == null || value.trim().equals("");
+    public String formatHours(double value) {
+        return String.format("%.2f", value);
     }
 %>
 
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>Task Manager - DBA Monitor</title>
+    <meta charset="UTF-8">
+    <title>Task Performance - DBA Monitor</title>
 
-<style>
-*{
-    box-sizing:border-box;
-}
+    <style>
+        * {
+            box-sizing: border-box;
+        }
 
-body{
-    margin:0;
-    font-family:"Segoe UI", Arial, sans-serif;
-    background:
-        radial-gradient(circle at top left, rgba(34,211,238,.14), transparent 32%),
-        linear-gradient(135deg,#08111f,#102033);
-    color:#e5eefb;
-    min-height:100vh;
-}
+        body {
+            margin: 0;
+            font-family: "Segoe UI", Arial, sans-serif;
+            min-height: 100vh;
+            background:
+                radial-gradient(circle at top left, rgba(34,211,238,.14), transparent 32%),
+                linear-gradient(135deg, #08111f, #102033);
+            color: #e5eefb;
+        }
 
-.page{
-    padding:24px;
-}
+        .page {
+            padding: 26px;
+        }
 
-.topbar{
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    gap:16px;
-    margin-bottom:18px;
-}
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+            margin-bottom: 20px;
+        }
 
-h1{
-    margin:0;
-    font-size:28px;
-}
+        h1 {
+            margin: 0;
+            font-size: 28px;
+        }
 
-.subtitle{
-    margin-top:6px;
-    font-size:14px;
-    color:#94a3b8;
-}
+        .subtitle {
+            color: #94a3b8;
+            font-size: 14px;
+            margin-top: 6px;
+        }
 
-.back-link{
-    color:#22d3ee;
-    text-decoration:none;
-    font-weight:900;
-    background:rgba(34,211,238,.12);
-    border:1px solid rgba(34,211,238,.25);
-    padding:10px 14px;
-    border-radius:12px;
-}
+        .back-link {
+            color: #22d3ee;
+            text-decoration: none;
+            font-weight: 900;
+            background: rgba(34,211,238,.12);
+            border: 1px solid rgba(34,211,238,.25);
+            padding: 10px 14px;
+            border-radius: 12px;
+        }
 
-.grid{
-    display:grid;
-    grid-template-columns:390px 1fr;
-    gap:18px;
-    align-items:start;
-}
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 14px;
+            margin-bottom: 18px;
+        }
 
-.card{
-    background:rgba(15,23,42,.80);
-    border:1px solid rgba(148,163,184,.22);
-    border-radius:20px;
-    padding:18px;
-    box-shadow:0 18px 50px rgba(0,0,0,.28);
-}
+        .summary-card {
+            background: rgba(15,23,42,.78);
+            border: 1px solid rgba(148,163,184,.22);
+            border-radius: 18px;
+            padding: 16px;
+            box-shadow: 0 18px 50px rgba(0,0,0,.25);
+        }
 
-.card h2{
-    margin:0 0 14px;
-    font-size:19px;
-}
+        .summary-label {
+            color: #94a3b8;
+            font-size: 13px;
+            font-weight: 800;
+            text-transform: uppercase;
+        }
 
-.form-group{
-    margin-bottom:13px;
-}
+        .summary-value {
+            font-size: 32px;
+            font-weight: 900;
+            margin-top: 7px;
+        }
 
-.two-col{
-    display:grid;
-    grid-template-columns:1fr 1fr;
-    gap:11px;
-}
+        .card {
+            background: rgba(15,23,42,.78);
+            border: 1px solid rgba(148,163,184,.22);
+            border-radius: 20px;
+            padding: 18px;
+            box-shadow: 0 18px 50px rgba(0,0,0,.28);
+        }
 
-label{
-    display:block;
-    font-size:12px;
-    color:#cbd5e1;
-    font-weight:900;
-    text-transform:uppercase;
-    margin-bottom:6px;
-}
+        .filter-row {
+            display: flex;
+            align-items: end;
+            gap: 12px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
 
-input, select, textarea{
-    width:100%;
-    border:1px solid rgba(148,163,184,.30);
-    background:rgba(2,6,23,.58);
-    color:#e5eefb;
-    border-radius:12px;
-    padding:10px 12px;
-    outline:none;
-    font-size:14px;
-}
+        label {
+            display: block;
+            color: #cbd5e1;
+            font-size: 12px;
+            font-weight: 900;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
 
-textarea{
-    min-height:115px;
-    resize:vertical;
-    line-height:1.45;
-}
+        input, select {
+            height: 40px;
+            border-radius: 11px;
+            border: 1px solid rgba(148,163,184,.30);
+            background: rgba(2,6,23,.58);
+            color: #e5eefb;
+            padding: 0 12px;
+            outline: none;
+        }
 
-button{
-    border:none;
-    border-radius:12px;
-    padding:10px 14px;
-    background:#22d3ee;
-    color:#06202a;
-    font-weight:900;
-    cursor:pointer;
-}
+        button {
+            height: 40px;
+            border: none;
+            border-radius: 11px;
+            background: #22d3ee;
+            color: #06202a;
+            font-weight: 900;
+            padding: 0 16px;
+            cursor: pointer;
+        }
 
-button:hover{
-    filter:brightness(1.08);
-}
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            overflow: hidden;
+            border-radius: 14px;
+        }
 
-.btn-small{
-    padding:7px 10px;
-    border-radius:9px;
-    font-size:12px;
-}
+        th, td {
+            padding: 12px;
+            border-bottom: 1px solid rgba(148,163,184,.18);
+            font-size: 14px;
+            text-align: left;
+        }
 
-.btn-secondary{
-    background:rgba(148,163,184,.16);
-    border:1px solid rgba(148,163,184,.24);
-    color:#e5eefb;
-}
+        th {
+            background: rgba(2,6,23,.65);
+            color: #cbd5e1;
+            text-transform: uppercase;
+            font-size: 12px;
+        }
 
-.btn-danger{
-    background:#ef4444;
-    color:white;
-}
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 45px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 900;
+        }
 
-.filter-row{
-    display:flex;
-    gap:10px;
-    align-items:end;
-    flex-wrap:wrap;
-    margin-bottom:14px;
-}
+        .good {
+            background: rgba(34,197,94,.16);
+            color: #86efac;
+        }
 
-.field{
-    width:170px;
-}
+        .warn {
+            background: rgba(245,158,11,.18);
+            color: #fbbf24;
+        }
 
-.task-list{
-    display:flex;
-    flex-direction:column;
-    gap:12px;
-}
+        .danger {
+            background: rgba(239,68,68,.18);
+            color: #fecaca;
+        }
 
-.task-item{
-    border:1px solid rgba(148,163,184,.20);
-    background:rgba(2,6,23,.34);
-    border-radius:17px;
-    padding:14px;
-}
+        .normal {
+            background: rgba(148,163,184,.18);
+            color: #cbd5e1;
+        }
 
-.task-head{
-    display:flex;
-    justify-content:space-between;
-    align-items:flex-start;
-    gap:12px;
-    margin-bottom:8px;
-}
+        .empty {
+            padding: 26px;
+            text-align: center;
+            color: #94a3b8;
+            border: 1px dashed rgba(148,163,184,.30);
+            border-radius: 16px;
+        }
 
-.task-title{
-    font-size:17px;
-    font-weight:900;
-    color:#f8fafc;
-    margin-bottom:7px;
-}
+        .error {
+            background: rgba(239,68,68,.16);
+            border: 1px solid rgba(239,68,68,.35);
+            color: #fecaca;
+            padding: 12px;
+            border-radius: 13px;
+            margin-bottom: 14px;
+        }
 
-.task-meta{
-    display:flex;
-    gap:8px;
-    flex-wrap:wrap;
-    color:#94a3b8;
-    font-size:12px;
-}
-
-.task-desc{
-    margin-top:10px;
-    color:#dbeafe;
-    font-size:14px;
-    line-height:1.55;
-    white-space:pre-wrap;
-}
-
-.badge{
-    display:inline-flex;
-    align-items:center;
-    padding:5px 9px;
-    border-radius:999px;
-    font-size:11px;
-    font-weight:900;
-}
-
-.badge-normal{
-    background:rgba(148,163,184,.18);
-    color:#cbd5e1;
-}
-
-.badge-high{
-    background:rgba(245,158,11,.18);
-    color:#fbbf24;
-}
-
-.badge-critical{
-    background:rgba(239,68,68,.18);
-    color:#fecaca;
-}
-
-.badge-open{
-    background:rgba(34,211,238,.16);
-    color:#67e8f9;
-}
-
-.badge-assigned{
-    background:rgba(59,130,246,.18);
-    color:#93c5fd;
-}
-
-.badge-progress{
-    background:rgba(168,85,247,.18);
-    color:#d8b4fe;
-}
-
-.badge-done{
-    background:rgba(34,197,94,.16);
-    color:#86efac;
-}
-
-.badge-cancelled{
-    background:rgba(100,116,139,.20);
-    color:#cbd5e1;
-}
-
-.actions{
-    display:flex;
-    gap:8px;
-    flex-wrap:wrap;
-    justify-content:flex-end;
-}
-
-.inline-form{
-    display:flex;
-    gap:7px;
-    align-items:center;
-    margin:0;
-}
-
-.inline-form select{
-    width:130px;
-    height:34px;
-    padding:0 8px;
-    border-radius:9px;
-    font-size:12px;
-}
-
-.empty{
-    padding:28px;
-    text-align:center;
-    color:#94a3b8;
-    border:1px dashed rgba(148,163,184,.28);
-    border-radius:16px;
-}
-
-.error{
-    background:rgba(239,68,68,.16);
-    border:1px solid rgba(239,68,68,.35);
-    color:#fecaca;
-    padding:12px;
-    border-radius:13px;
-    margin-bottom:14px;
-}
-
-@media(max-width:1000px){
-    .grid{
-        grid-template-columns:1fr;
-    }
-}
-</style>
+        @media(max-width: 900px) {
+            .summary-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
 </head>
 
 <body>
@@ -359,286 +262,113 @@ button:hover{
 
     <div class="topbar">
         <div>
-            <h1>Task Manager</h1>
+            <h1>Task Performance</h1>
             <div class="subtitle">
-                Create, assign, reassign and complete DBA team tasks.
+                Team lead view for task completion, pending work and reassignment count.
             </div>
         </div>
 
         <a class="back-link" href="<%= ctx %>/refreshstats">← Back to Dashboard</a>
     </div>
 
-    <% if(errorMsg != null){ %>
+    <% if (errorMsg != null) { %>
         <div class="error"><%= esc(errorMsg) %></div>
     <% } %>
 
-    <div class="grid">
-
-        <div class="card">
-            <h2>Create New Task</h2>
-
-            <form method="post" action="<%= ctx %>/taskmanager">
-                <input type="hidden" name="action" value="create">
-
-                <div class="two-col">
-                    <div class="form-group">
-                        <label>Site</label>
-                        <select name="site">
-                            <option value="">NA</option>
-                            <option value="PR">PR</option>
-                            <option value="DR">DR</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Target</label>
-                        <select name="target">
-                            <option value="">NA</option>
-                            <option value="MIDB">MIDB</option>
-                            <option value="HIDB">HIDB</option>
-                            <option value="REPORTDB">REPORTDB</option>
-                            <option value="SBISIDB">SBISIDB</option>
-                            <option value="ARCHIVALDB">ARCHIVALDB</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="two-col">
-                    <div class="form-group">
-                        <label>Object Type</label>
-                        <select name="objectType">
-                            <option value="GENERAL">General</option>
-                            <option value="FRA">FRA</option>
-                            <option value="TABLESPACE">Tablespace</option>
-                            <option value="USER">User</option>
-                            <option value="GG_LAG">GG Lag</option>
-                            <option value="SESSION">Session</option>
-                            <option value="BACKUP">Backup</option>
-                            <option value="PARTITION">Partition</option>
-                            <option value="COMPRESSION">Compression</option>
-                            <option value="INCIDENT">Incident</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Object Name</label>
-                        <input type="text" name="objectName" placeholder="EISAPP / username / NA">
-                    </div>
-                </div>
-
-                <div class="two-col">
-                    <div class="form-group">
-                        <label>Priority</label>
-                        <select name="priority">
-                            <option value="NORMAL">Normal</option>
-                            <option value="HIGH">High</option>
-                            <option value="CRITICAL">Critical</option>
-                        </select>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Assign To</label>
-                        <select name="assignedTo">
-                            <option value="">Unassigned</option>
-                            <% for(String u : users){ %>
-                                <option value="<%= esc(u) %>"><%= esc(u) %></option>
-                            <% } %>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label>Title</label>
-                    <input type="text" name="title" placeholder="Example: Extend EISAPP tablespace" required>
-                </div>
-
-                <div class="form-group">
-                    <label>Description</label>
-                    <textarea name="description" placeholder="Write task details, DB name, issue, required action..." required></textarea>
-                </div>
-
-                <button type="submit" style="width:100%;">Create Task</button>
-            </form>
+    <div class="summary-grid">
+        <div class="summary-card">
+            <div class="summary-label">Assigned Tasks</div>
+            <div class="summary-value"><%= totalAssigned %></div>
         </div>
 
-        <div class="card">
-            <h2>Tasks</h2>
+        <div class="summary-card">
+            <div class="summary-label">Completed Tasks</div>
+            <div class="summary-value" style="color:#86efac;"><%= totalCompleted %></div>
+        </div>
 
-            <form method="get" action="<%= ctx %>/taskmanager" class="filter-row">
-                <div class="field">
-                    <label>Status</label>
-                    <select name="status">
-                        <option value="ALL" <%= "ALL".equalsIgnoreCase(statusFilter) ? "selected" : "" %>>All</option>
-                        <option value="OPEN" <%= "OPEN".equalsIgnoreCase(statusFilter) ? "selected" : "" %>>Open</option>
-                        <option value="ASSIGNED" <%= "ASSIGNED".equalsIgnoreCase(statusFilter) ? "selected" : "" %>>Assigned</option>
-                        <option value="IN_PROGRESS" <%= "IN_PROGRESS".equalsIgnoreCase(statusFilter) ? "selected" : "" %>>In Progress</option>
-                        <option value="DONE" <%= "DONE".equalsIgnoreCase(statusFilter) ? "selected" : "" %>>Done</option>
-                        <option value="CANCELLED" <%= "CANCELLED".equalsIgnoreCase(statusFilter) ? "selected" : "" %>>Cancelled</option>
-                    </select>
-                </div>
+        <div class="summary-card">
+            <div class="summary-label">Pending Tasks</div>
+            <div class="summary-value" style="color:#fecaca;"><%= totalPending %></div>
+        </div>
 
-                <div class="field">
-                    <label>Assigned To</label>
-                    <select name="assignedTo">
-                        <option value="ALL" <%= "ALL".equalsIgnoreCase(assignedFilter) ? "selected" : "" %>>All</option>
-                        <option value="UNASSIGNED" <%= "UNASSIGNED".equalsIgnoreCase(assignedFilter) ? "selected" : "" %>>Unassigned</option>
-                        <% for(String u : users){ %>
-                            <option value="<%= esc(u) %>" <%= u.equalsIgnoreCase(assignedFilter) ? "selected" : "" %>><%= esc(u) %></option>
-                        <% } %>
-                    </select>
-                </div>
+        <div class="summary-card">
+            <div class="summary-label">Critical Completed</div>
+            <div class="summary-value" style="color:#fbbf24;"><%= totalCritical %></div>
+        </div>
+    </div>
 
-                <div class="field">
-                    <label>Priority</label>
-                    <select name="priority">
-                        <option value="ALL" <%= "ALL".equalsIgnoreCase(priorityFilter) ? "selected" : "" %>>All</option>
-                        <option value="NORMAL" <%= "NORMAL".equalsIgnoreCase(priorityFilter) ? "selected" : "" %>>Normal</option>
-                        <option value="HIGH" <%= "HIGH".equalsIgnoreCase(priorityFilter) ? "selected" : "" %>>High</option>
-                        <option value="CRITICAL" <%= "CRITICAL".equalsIgnoreCase(priorityFilter) ? "selected" : "" %>>Critical</option>
-                    </select>
-                </div>
+    <div class="card">
 
-                <button type="submit">Filter</button>
-                <a class="back-link" href="<%= ctx %>/taskmanager">Reset</a>
-            </form>
+        <form method="get" action="<%= ctx %>/taskperformance" class="filter-row">
+            <div>
+                <label>From Date</label>
+                <input type="date" name="fromDate" value="<%= esc(fromDate) %>">
+            </div>
 
-            <% if(tasks.isEmpty()){ %>
+            <div>
+                <label>To Date</label>
+                <input type="date" name="toDate" value="<%= esc(toDate) %>">
+            </div>
 
-                <div class="empty">No tasks found.</div>
-
-            <% }else{ %>
-
-                <div class="task-list">
-                    <% for(TaskItem t : tasks){ 
-                        boolean assignedToMe = loggedUser != null && loggedUser.equalsIgnoreCase(String.valueOf(t.getAssignedTo()));
-                        boolean createdByMe = loggedUser != null && loggedUser.equalsIgnoreCase(String.valueOf(t.getCreatedBy()));
-                        boolean canChange = isAdmin || assignedToMe || createdByMe || blank(t.getAssignedTo());
-                        boolean isDone = "DONE".equalsIgnoreCase(t.getStatus());
-                        boolean isCancelled = "CANCELLED".equalsIgnoreCase(t.getStatus());
-                    %>
-
-                        <div class="task-item">
-                            <div class="task-head">
-                                <div>
-                                    <div class="task-title"><%= esc(t.getTitle()) %></div>
-
-                                    <div class="task-meta">
-                                        <span class="badge <%= badgeClass(t.getPriority()) %>"><%= esc(t.getPriority()) %></span>
-                                        <span class="badge <%= badgeClass(t.getStatus()) %>"><%= esc(t.getStatus()) %></span>
-                                        <span class="badge badge-normal"><%= esc(t.getSourceType()) %></span>
-
-                                        <% if(!blank(t.getSite()) || !blank(t.getTarget())){ %>
-                                            <span class="badge badge-normal"><%= esc(t.getSite()) %>-<%= esc(t.getTarget()) %></span>
-                                        <% } %>
-
-                                        <% if(!blank(t.getObjectType())){ %>
-                                            <span class="badge badge-normal"><%= esc(t.getObjectType()) %>: <%= esc(t.getObjectName()) %></span>
-                                        <% } %>
-
-                                        <span>Assigned: <b><%= blank(t.getAssignedTo()) ? "Unassigned" : esc(t.getAssignedTo()) %></b></span>
-                                        <span>Created by: <b><%= esc(t.getCreatedBy()) %></b></span>
-                                        <span>Created: <%= esc(t.getCreatedAt()) %></span>
-
-                                        <% if(t.getReassignCount() > 0){ %>
-                                            <span>Reassigned: <b><%= t.getReassignCount() %></b></span>
-                                        <% } %>
-                                    </div>
-                                </div>
-
-                                <div class="actions">
-
-                                    <% if(!isDone && !isCancelled && blank(t.getAssignedTo())){ %>
-                                        <form method="post" action="<%= ctx %>/taskmanager" style="margin:0;">
-                                            <input type="hidden" name="action" value="take">
-                                            <input type="hidden" name="id" value="<%= t.getId() %>">
-                                            <button class="btn-small" type="submit">Take Task</button>
-                                        </form>
-                                    <% } %>
-
-                                    <% if(!isDone && !isCancelled && canChange){ %>
-                                        <form method="post" action="<%= ctx %>/taskmanager" class="inline-form">
-                                            <input type="hidden" name="action" value="assign">
-                                            <input type="hidden" name="id" value="<%= t.getId() %>">
-                                            <input type="hidden" name="remarks" value="Assigned/Reassigned from task manager">
-
-                                            <select name="assignedTo" required>
-                                                <% for(String u : users){ %>
-                                                    <option value="<%= esc(u) %>" <%= u.equalsIgnoreCase(String.valueOf(t.getAssignedTo())) ? "selected" : "" %>><%= esc(u) %></option>
-                                                <% } %>
-                                            </select>
-
-                                            <button class="btn-small btn-secondary" type="submit">Assign/Reassign</button>
-                                        </form>
-                                    <% } %>
-
-                                    <% if(!isDone && !isCancelled && canChange){ %>
-                                        <form method="post" action="<%= ctx %>/taskmanager" style="margin:0;" onsubmit="return completeTaskPrompt(this);">
-                                            <input type="hidden" name="action" value="complete">
-                                            <input type="hidden" name="id" value="<%= t.getId() %>">
-                                            <input type="hidden" name="completionRemarks" value="">
-                                            <button class="btn-small" type="submit">Mark Done</button>
-                                        </form>
-                                    <% } %>
-
-                                    <% if(isDone && isAdmin){ %>
-                                        <form method="post" action="<%= ctx %>/taskmanager" style="margin:0;">
-                                            <input type="hidden" name="action" value="reopen">
-                                            <input type="hidden" name="id" value="<%= t.getId() %>">
-                                            <button class="btn-small btn-secondary" type="submit">Reopen</button>
-                                        </form>
-                                    <% } %>
-
-                                    <% if(!isDone && !isCancelled && isAdmin){ %>
-                                        <form method="post" action="<%= ctx %>/taskmanager" style="margin:0;" onsubmit="return confirm('Cancel this task?');">
-                                            <input type="hidden" name="action" value="cancel">
-                                            <input type="hidden" name="id" value="<%= t.getId() %>">
-                                            <button class="btn-small btn-danger" type="submit">Cancel</button>
-                                        </form>
-                                    <% } %>
-
-                                </div>
-                            </div>
-
-                            <div class="task-desc"><%= esc(t.getDescription()) %></div>
-
-                            <% if(isDone){ %>
-                                <div class="task-meta" style="margin-top:10px;">
-                                    <span>Completed by: <b><%= esc(t.getCompletedBy()) %></b></span>
-                                    <span>Completed at: <%= esc(t.getCompletedAt()) %></span>
-                                    <span>Remarks: <%= esc(t.getCompletionRemarks()) %></span>
-                                </div>
-                            <% } %>
-
-                        </div>
-
+            <div>
+                <label>User</label>
+                <select name="user">
+                    <option value="ALL" <%= "ALL".equalsIgnoreCase(userFilter) ? "selected" : "" %>>All</option>
+                    <% for (String u : users) { %>
+                        <option value="<%= esc(u) %>" <%= u.equalsIgnoreCase(userFilter) ? "selected" : "" %>><%= esc(u) %></option>
                     <% } %>
-                </div>
+                </select>
+            </div>
 
-            <% } %>
+            <button type="submit">Filter</button>
+            <a class="back-link" href="<%= ctx %>/taskperformance">Last 7 Days</a>
+        </form>
 
-        </div>
+        <% if (performanceList.isEmpty()) { %>
+
+            <div class="empty">
+                No task performance data found.
+            </div>
+
+        <% } else { %>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Created</th>
+                        <th>Assigned</th>
+                        <th>Completed</th>
+                        <th>Pending</th>
+                        <th>Critical Done</th>
+                        <th>High Done</th>
+                        <th>Reassign Count</th>
+                        <th>Avg Completion Hours</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                <% for (TaskPerformance p : performanceList) { %>
+                    <tr>
+                        <td><b><%= esc(p.getUsername()) %></b></td>
+                        <td><span class="badge normal"><%= p.getCreatedTasks() %></span></td>
+                        <td><span class="badge normal"><%= p.getAssignedTasks() %></span></td>
+                        <td><span class="badge good"><%= p.getCompletedTasks() %></span></td>
+                        <td><span class="badge <%= p.getPendingTasks() > 0 ? "danger" : "good" %>"><%= p.getPendingTasks() %></span></td>
+                        <td><span class="badge warn"><%= p.getCriticalCompleted() %></span></td>
+                        <td><span class="badge warn"><%= p.getHighCompleted() %></span></td>
+                        <td><span class="badge <%= p.getTotalReassignCount() > 0 ? "warn" : "normal" %>"><%= p.getTotalReassignCount() %></span></td>
+                        <td><span class="badge normal"><%= formatHours(p.getAvgCompletionHours()) %></span></td>
+                    </tr>
+                <% } %>
+                </tbody>
+            </table>
+
+        <% } %>
 
     </div>
 
 </div>
-
-<script>
-function completeTaskPrompt(form){
-    var remarks = prompt("Enter completion remarks:", "Task completed and verified");
-
-    if(remarks === null){
-        return false;
-    }
-
-    if(remarks.trim() === ""){
-        alert("Completion remarks are required.");
-        return false;
-    }
-
-    form.completionRemarks.value = remarks;
-    return true;
-}
-</script>
 
 </body>
 </html>
