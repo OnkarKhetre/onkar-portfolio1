@@ -1,89 +1,75 @@
-package com.dba.controller;
+public long createOrTouchNotificationTask(String site,
+                                          String target,
+                                          String objectType,
+                                          String objectName,
+                                          String title,
+                                          String description,
+                                          String priority) throws Exception {
 
-import java.io.IOException;
-import java.time.LocalDate;
-import java.util.List;
+    String cleanSite = clean(site);
+    String cleanTarget = clean(target);
+    String cleanObjectType = clean(objectType);
+    String cleanObjectName = clean(objectName);
+    String cleanPriority = normalizePriority(priority);
 
-import com.dba.models.TaskPerformance;
-import com.dba.service.TaskPerformanceService;
+    String sourceKey = "NOTIF|" + cleanSite + "|" + cleanTarget + "|" + cleanObjectType + "|" + cleanObjectName;
+    String activeKey = sourceKey;
 
-import jakarta.servlet.ServletException;
-import jakarta.servlet.annotation.WebServlet;
-import jakarta.servlet.http.HttpServlet;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import jakarta.servlet.http.HttpSession;
+    String sql =
+            "INSERT INTO task_items " +
+            "(source_type, source_key, active_key, site, target, object_type, object_name, " +
+            "title, description, priority, status, created_by, last_seen_at, occurrence_count) " +
+            "VALUES ('NOTIFICATION', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', 'SYSTEM', NOW(), 1) " +
+            "ON DUPLICATE KEY UPDATE " +
+            "last_seen_at = NOW(), " +
+            "occurrence_count = IFNULL(occurrence_count, 1) + 1, " +
+            "description = ?, " +
+            "priority = CASE " +
+            "   WHEN priority = 'CRITICAL' THEN 'CRITICAL' " +
+            "   WHEN ? = 'CRITICAL' THEN 'CRITICAL' " +
+            "   WHEN priority = 'HIGH' THEN 'HIGH' " +
+            "   WHEN ? = 'HIGH' THEN 'HIGH' " +
+            "   ELSE priority " +
+            "END";
 
-@WebServlet("/taskperformance")
-public class TaskPerformanceServlet extends HttpServlet {
-    private static final long serialVersionUID = 1L;
+    Connection conn = null;
+    PreparedStatement ps = null;
 
-    private TaskPerformanceService service = new TaskPerformanceService();
+    try {
+        conn = MysqlConnection.getConnection();
 
-    protected void doGet(HttpServletRequest request, HttpServletResponse response)
-            throws ServletException, IOException {
+        ps = conn.prepareStatement(sql);
 
-        if (!isAdmin(request)) {
-            response.sendRedirect(request.getContextPath() + "/refreshstats");
-            return;
+        ps.setString(1, sourceKey);
+        ps.setString(2, activeKey);
+        ps.setString(3, cleanSite);
+        ps.setString(4, cleanTarget);
+        ps.setString(5, cleanObjectType);
+        ps.setString(6, cleanObjectName);
+        ps.setString(7, safeText(title));
+        ps.setString(8, safeText(description));
+        ps.setString(9, cleanPriority);
+
+        ps.setString(10, safeText(description));
+        ps.setString(11, cleanPriority);
+        ps.setString(12, cleanPriority);
+
+        int affectedRows = ps.executeUpdate();
+
+        long taskId = getTaskIdByActiveKey(conn, activeKey);
+
+        if (affectedRows == 1) {
+            logHistory(conn, taskId, "AUTO_CREATE", null, "OPEN", null, null, "SYSTEM",
+                    "Task automatically created from notification");
         }
 
-        String fromDate = request.getParameter("fromDate");
-        String toDate = request.getParameter("toDate");
-        String user = request.getParameter("user");
+        return taskId;
 
-        if (fromDate == null || fromDate.trim().equals("")) {
-            fromDate = LocalDate.now().minusDays(7).toString();
+    } finally {
+        if (ps != null) {
+            try { ps.close(); } catch (Exception e) {}
         }
 
-        if (toDate == null || toDate.trim().equals("")) {
-            toDate = LocalDate.now().toString();
-        }
-
-        if (user == null || user.trim().equals("")) {
-            user = "ALL";
-        }
-
-        try {
-            List<TaskPerformance> performanceList = service.getPerformance(fromDate, toDate, user);
-            List<String> users = service.getActiveUsers();
-
-            request.setAttribute("performanceList", performanceList);
-            request.setAttribute("users", users);
-            request.setAttribute("fromDate", fromDate);
-            request.setAttribute("toDate", toDate);
-            request.setAttribute("userFilter", user);
-
-            request.getRequestDispatcher("/taskperformance.jsp").forward(request, response);
-
-        } catch (Exception e) {
-            e.printStackTrace();
-
-            request.setAttribute("errorMsg", e.getMessage());
-            request.setAttribute("fromDate", fromDate);
-            request.setAttribute("toDate", toDate);
-            request.setAttribute("userFilter", user);
-
-            request.getRequestDispatcher("/taskperformance.jsp").forward(request, response);
-        }
-    }
-
-    private boolean isAdmin(HttpServletRequest request) {
-
-        HttpSession session = request.getSession(false);
-
-        if (session == null) {
-            return false;
-        }
-
-        Object roleObj = session.getAttribute("loggedRole");
-
-        if (roleObj == null) {
-            return false;
-        }
-
-        String role = String.valueOf(roleObj);
-
-        return "ADMIN".equalsIgnoreCase(role) || "TEAM_LEAD".equalsIgnoreCase(role);
+        MysqlConnection.closeConnection(conn);
     }
 }
