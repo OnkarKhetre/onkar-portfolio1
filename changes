@@ -1,75 +1,55 @@
-public long createOrTouchNotificationTask(String site,
-                                          String target,
-                                          String objectType,
-                                          String objectName,
-                                          String title,
-                                          String description,
-                                          String priority) throws Exception {
+private long getTaskIdByActiveKey(Connection conn, String activeKey) throws Exception {
 
-    String cleanSite = clean(site);
-    String cleanTarget = clean(target);
-    String cleanObjectType = clean(objectType);
-    String cleanObjectName = clean(objectName);
-    String cleanPriority = normalizePriority(priority);
+    String sql = "SELECT id FROM task_items WHERE active_key = ? LIMIT 1";
 
-    String sourceKey = "NOTIF|" + cleanSite + "|" + cleanTarget + "|" + cleanObjectType + "|" + cleanObjectName;
-    String activeKey = sourceKey;
-
-    String sql =
-            "INSERT INTO task_items " +
-            "(source_type, source_key, active_key, site, target, object_type, object_name, " +
-            "title, description, priority, status, created_by, last_seen_at, occurrence_count) " +
-            "VALUES ('NOTIFICATION', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', 'SYSTEM', NOW(), 1) " +
-            "ON DUPLICATE KEY UPDATE " +
-            "last_seen_at = NOW(), " +
-            "occurrence_count = IFNULL(occurrence_count, 1) + 1, " +
-            "description = ?, " +
-            "priority = CASE " +
-            "   WHEN priority = 'CRITICAL' THEN 'CRITICAL' " +
-            "   WHEN ? = 'CRITICAL' THEN 'CRITICAL' " +
-            "   WHEN priority = 'HIGH' THEN 'HIGH' " +
-            "   WHEN ? = 'HIGH' THEN 'HIGH' " +
-            "   ELSE priority " +
-            "END";
-
-    Connection conn = null;
     PreparedStatement ps = null;
+    ResultSet rs = null;
 
     try {
-        conn = MysqlConnection.getConnection();
-
         ps = conn.prepareStatement(sql);
+        ps.setString(1, activeKey);
 
-        ps.setString(1, sourceKey);
-        ps.setString(2, activeKey);
-        ps.setString(3, cleanSite);
-        ps.setString(4, cleanTarget);
-        ps.setString(5, cleanObjectType);
-        ps.setString(6, cleanObjectName);
-        ps.setString(7, safeText(title));
-        ps.setString(8, safeText(description));
-        ps.setString(9, cleanPriority);
+        rs = ps.executeQuery();
 
-        ps.setString(10, safeText(description));
-        ps.setString(11, cleanPriority);
-        ps.setString(12, cleanPriority);
-
-        int affectedRows = ps.executeUpdate();
-
-        long taskId = getTaskIdByActiveKey(conn, activeKey);
-
-        if (affectedRows == 1) {
-            logHistory(conn, taskId, "AUTO_CREATE", null, "OPEN", null, null, "SYSTEM",
-                    "Task automatically created from notification");
+        if (rs.next()) {
+            return rs.getLong("id");
         }
 
-        return taskId;
-
     } finally {
+        if (rs != null) {
+            try { rs.close(); } catch (Exception e) {}
+        }
+
         if (ps != null) {
             try { ps.close(); } catch (Exception e) {}
         }
-
-        MysqlConnection.closeConnection(conn);
     }
+
+    return -1;
 }
+
+
+
+private String safeText(String value) {
+    if (value == null) {
+        return "";
+    }
+
+    return value.trim();
+}
+
+private String normalizePriority(String value) {
+
+    String priority = clean(value);
+
+    if ("CRITICAL".equalsIgnoreCase(priority)) {
+        return "CRITICAL";
+    }
+
+    if ("HIGH".equalsIgnoreCase(priority)) {
+        return "HIGH";
+    }
+
+    return "NORMAL";
+}
+
