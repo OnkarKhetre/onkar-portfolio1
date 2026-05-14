@@ -1,4 +1,8 @@
 <%@ page import="java.util.*" %>
+<%@ page import="java.time.LocalDate" %>
+<%@ page import="java.time.Month" %>
+<%@ page import="java.time.format.TextStyle" %>
+<%@ page import="java.util.Locale" %>
 <%@ page contentType="text/html;charset=UTF-8" language="java" %>
 
 <%
@@ -18,12 +22,15 @@
     if (users == null) users = new ArrayList<String>();
     if (rosterMap == null) rosterMap = new HashMap<String, String>();
     if (currentShiftUsers == null) currentShiftUsers = new ArrayList<String>();
+    if (currentShift == null) currentShift = "NA";
 
-    int year = yearObj == null ? 2026 : yearObj.intValue();
-    int month = monthObj == null ? 5 : monthObj.intValue();
-    int daysInMonth = daysObj == null ? 31 : daysObj.intValue();
+    int year = yearObj == null ? LocalDate.now().getYear() : yearObj.intValue();
+    int month = monthObj == null ? LocalDate.now().getMonthValue() : monthObj.intValue();
+    int daysInMonth = daysObj == null ? LocalDate.of(year, month, 1).lengthOfMonth() : daysObj.intValue();
 
     String ctx = request.getContextPath();
+
+    String monthTitle = Month.of(month).getDisplayName(TextStyle.FULL, Locale.ENGLISH) + " " + year;
 %>
 
 <%!
@@ -51,6 +58,29 @@
         if ("WO".equalsIgnoreCase(code)) return "Week Off";
         if ("L".equalsIgnoreCase(code)) return "Leave";
         return "Not Assigned";
+    }
+
+    public String shortDayName(int year, int month, int day) {
+        LocalDate date = LocalDate.of(year, month, day);
+        return date.getDayOfWeek().getDisplayName(TextStyle.SHORT, Locale.ENGLISH);
+    }
+
+    public String dateClass(int year, int month, int day) {
+        LocalDate date = LocalDate.of(year, month, day);
+
+        String cls = "";
+
+        String dayName = date.getDayOfWeek().toString();
+
+        if ("SATURDAY".equals(dayName) || "SUNDAY".equals(dayName)) {
+            cls += " weekend-day";
+        }
+
+        if (date.equals(LocalDate.now())) {
+            cls += " today-day";
+        }
+
+        return cls;
     }
 %>
 
@@ -89,13 +119,16 @@ body {
 
 h1 {
     margin: 0;
-    font-size: 28px;
+    font-size: 30px;
+    font-weight: 900;
+    letter-spacing: -0.5px;
 }
 
 .subtitle {
     margin-top: 6px;
     color: #94a3b8;
     font-size: 14px;
+    font-weight: 600;
 }
 
 .back-link {
@@ -106,6 +139,10 @@ h1 {
     border: 1px solid rgba(34,211,238,.25);
     padding: 10px 14px;
     border-radius: 12px;
+}
+
+.back-link:hover {
+    background: rgba(34,211,238,.20);
 }
 
 .card {
@@ -156,6 +193,19 @@ button {
 
 button:hover {
     filter: brightness(1.08);
+}
+
+.month-title {
+    font-size: 21px;
+    font-weight: 900;
+    color: #e5eefb;
+    margin-top: 16px;
+}
+
+.month-subtitle {
+    color: #94a3b8;
+    font-size: 13px;
+    margin-top: 5px;
 }
 
 .legend {
@@ -216,6 +266,7 @@ button:hover {
     padding: 12px;
     border-radius: 13px;
     margin-bottom: 14px;
+    font-weight: 800;
 }
 
 .error {
@@ -225,6 +276,7 @@ button:hover {
     padding: 12px;
     border-radius: 13px;
     margin-bottom: 14px;
+    font-weight: 800;
 }
 
 .current-box {
@@ -232,6 +284,29 @@ button:hover {
     gap: 12px;
     align-items: center;
     flex-wrap: wrap;
+}
+
+.user-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(34,211,238,0.16);
+    color: #a5f3fc;
+    font-size: 12px;
+    font-weight: 900;
+    margin-right: 4px;
+}
+
+.empty-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    background: rgba(239,68,68,0.16);
+    color: #fecaca;
+    font-size: 12px;
+    font-weight: 900;
 }
 
 .table-wrap {
@@ -271,13 +346,40 @@ th {
     z-index: 6;
     background: rgba(15,23,42,.98);
     text-align: left;
-    min-width: 170px;
+    min-width: 180px;
     font-weight: 900;
 }
 
 th.name-col {
     z-index: 8;
     background: rgba(2,6,23,.98);
+}
+
+.day-head {
+    min-width: 72px;
+    padding: 8px 6px;
+}
+
+.day-num {
+    font-size: 15px;
+    font-weight: 900;
+    color: #f8fafc;
+}
+
+.day-name {
+    font-size: 10px;
+    font-weight: 900;
+    color: #94a3b8;
+    text-transform: uppercase;
+    margin-top: 3px;
+}
+
+.weekend-day {
+    background: rgba(245,158,11,0.13) !important;
+}
+
+.today-day {
+    box-shadow: inset 0 0 0 2px rgba(34,211,238,0.75);
 }
 
 .shift-select {
@@ -288,30 +390,31 @@ th.name-col {
     font-weight: 900;
     padding: 0 5px;
     color: #ffffff;
+    border: 1px solid rgba(255,255,255,.18);
 }
 
 .shift-select.M {
-    background: rgba(37,99,235,.75);
+    background: rgba(37,99,235,.78);
 }
 
 .shift-select.S {
-    background: rgba(22,163,74,.72);
+    background: rgba(22,163,74,.75);
 }
 
 .shift-select.N {
-    background: rgba(126,34,206,.72);
+    background: rgba(126,34,206,.75);
 }
 
 .shift-select.G {
-    background: rgba(2,132,199,.72);
+    background: rgba(2,132,199,.75);
 }
 
 .shift-select.WO {
-    background: rgba(71,85,105,.80);
+    background: rgba(71,85,105,.84);
 }
 
 .shift-select.L {
-    background: rgba(220,38,38,.78);
+    background: rgba(220,38,38,.80);
 }
 
 .shift-select.NA {
@@ -329,6 +432,23 @@ th.name-col {
 .small-text {
     color: #94a3b8;
     font-size: 13px;
+}
+
+.roster-tip {
+    margin-top: 8px;
+    color: #94a3b8;
+    font-size: 12px;
+}
+
+@media(max-width: 900px) {
+    .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .page {
+        padding: 16px;
+    }
 }
 </style>
 </head>
@@ -360,7 +480,9 @@ th.name-col {
                 <label>Month</label>
                 <select name="month">
                     <% for(int m = 1; m <= 12; m++){ %>
-                        <option value="<%= m %>" <%= m == month ? "selected" : "" %>><%= m %></option>
+                        <option value="<%= m %>" <%= m == month ? "selected" : "" %>>
+                            <%= Month.of(m).getDisplayName(TextStyle.SHORT, Locale.ENGLISH) %>
+                        </option>
                     <% } %>
                 </select>
             </div>
@@ -372,6 +494,11 @@ th.name-col {
 
             <button type="submit">Load Roster</button>
         </form>
+
+        <div class="month-title">Roster for <%= esc(monthTitle) %></div>
+        <div class="month-subtitle">
+            Dates are shown with weekday names. Weekend and today are highlighted automatically.
+        </div>
 
         <div class="legend">
             <span class="badge M">M = Morning 7:30 - 3:30</span>
@@ -390,14 +517,15 @@ th.name-col {
                 Current Shift: <%= esc(currentShift) %> - <%= shiftName(currentShift) %>
             </span>
 
-            <span class="small-text">
-                Working now:
-                <% if(currentShiftUsers.isEmpty()){ %>
-                    <b>No roster found</b>
-                <% } else { %>
-                    <b><%= esc(currentShiftUsers) %></b>
+            <span class="small-text">Working now:</span>
+
+            <% if(currentShiftUsers.isEmpty()){ %>
+                <span class="empty-pill">No roster found</span>
+            <% } else { %>
+                <% for(String u : currentShiftUsers){ %>
+                    <span class="user-pill"><%= esc(u) %></span>
                 <% } %>
-            </span>
+            <% } %>
         </div>
     </div>
 
@@ -412,8 +540,12 @@ th.name-col {
                     <thead>
                         <tr>
                             <th class="name-col">Team Member</th>
+
                             <% for(int day = 1; day <= daysInMonth; day++){ %>
-                                <th><%= day %></th>
+                                <th class="day-head <%= dateClass(year, month, day) %>">
+                                    <div class="day-num"><%= day %></div>
+                                    <div class="day-name"><%= shortDayName(year, month, day) %></div>
+                                </th>
                             <% } %>
                         </tr>
                     </thead>
@@ -428,9 +560,12 @@ th.name-col {
                                 <% for(int day = 1; day <= daysInMonth; day++){ 
                                     String key = username + "#" + day;
                                     String shift = rosterMap.get(key);
-                                    if(shift == null || shift.trim().equals("")) shift = "NA";
+
+                                    if(shift == null || shift.trim().equals("")) {
+                                        shift = "NA";
+                                    }
                                 %>
-                                    <td>
+                                    <td class="<%= dateClass(year, month, day) %>">
                                         <select name="shift_<%= i %>_<%= day %>"
                                                 class="shift-select <%= esc(shift) %>"
                                                 onchange="updateShiftColor(this)">
@@ -451,8 +586,11 @@ th.name-col {
             </div>
 
             <div class="actions">
-                <div class="small-text">
-                    Save after filling the monthly roster.
+                <div>
+                    <div class="small-text">Save after filling the monthly roster.</div>
+                    <div class="roster-tip">
+                        Tip: Horizontal scroll is enabled. Team member column stays fixed.
+                    </div>
                 </div>
 
                 <button type="submit">Save Roster</button>
@@ -464,7 +602,7 @@ th.name-col {
 </div>
 
 <script>
-function updateShiftColor(select){
+function updateShiftColor(select) {
     select.className = "shift-select " + select.value;
 }
 </script>
