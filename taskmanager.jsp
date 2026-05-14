@@ -1,36 +1,18 @@
 <%@ page import="java.util.*" %>
-<%@ page import="java.time.LocalDate" %>
-<%@ page import="java.time.Month" %>
-<%@ page import="java.time.format.TextStyle" %>
-<%@ page import="java.util.Locale" %>
+<%@ page import="com.dba.models.AdminUser" %>
 <%@ page contentType="text/html;charset=UTF-8" language="java" %>
 
 <%
-    List<String> users = (List<String>) request.getAttribute("users");
-    Map<String, String> rosterMap = (Map<String, String>) request.getAttribute("rosterMap");
-
-    Integer yearObj = (Integer) request.getAttribute("year");
-    Integer monthObj = (Integer) request.getAttribute("month");
-    Integer daysObj = (Integer) request.getAttribute("daysInMonth");
-
-    String currentShift = (String) request.getAttribute("currentShift");
-    List<String> currentShiftUsers = (List<String>) request.getAttribute("currentShiftUsers");
-
+    List<AdminUser> users = (List<AdminUser>) request.getAttribute("users");
     String errorMsg = (String) request.getAttribute("errorMsg");
     String saved = request.getParameter("saved");
+    String error = request.getParameter("error");
 
-    if (users == null) users = new ArrayList<String>();
-    if (rosterMap == null) rosterMap = new HashMap<String, String>();
-    if (currentShiftUsers == null) currentShiftUsers = new ArrayList<String>();
-    if (currentShift == null) currentShift = "NA";
-
-    int year = yearObj == null ? LocalDate.now().getYear() : yearObj.intValue();
-    int month = monthObj == null ? LocalDate.now().getMonthValue() : monthObj.intValue();
-    int daysInMonth = daysObj == null ? LocalDate.of(year, month, 1).lengthOfMonth() : daysObj.intValue();
+    if (users == null) {
+        users = new ArrayList<AdminUser>();
+    }
 
     String ctx = request.getContextPath();
-
-    String monthTitle = Month.of(month).getDisplayName(TextStyle.FULL, Locale.ENGLISH) + " " + year;
 %>
 
 <%!
@@ -46,41 +28,28 @@
     }
 
     public String selected(String actual, String expected) {
-        if (actual == null) actual = "NA";
+        if (actual == null) return "";
         return actual.equalsIgnoreCase(expected) ? "selected" : "";
     }
 
-    public String shiftName(String code) {
-        if ("M".equalsIgnoreCase(code)) return "Morning";
-        if ("S".equalsIgnoreCase(code)) return "Second";
-        if ("N".equalsIgnoreCase(code)) return "Night";
-        if ("G".equalsIgnoreCase(code)) return "General";
-        if ("WO".equalsIgnoreCase(code)) return "Week Off";
-        if ("L".equalsIgnoreCase(code)) return "Leave";
-        return "Not Assigned";
+    public String activeText(String active) {
+        if ("Y".equalsIgnoreCase(active)) {
+            return "Active";
+        }
+        return "Inactive";
     }
 
-    public String shortDayName(int year, int month, int day) {
-        LocalDate date = LocalDate.of(year, month, day);
-        return date.getDayOfWeek().getDisplayName(TextStyle.SHORT, Locale.ENGLISH);
+    public String activeClass(String active) {
+        if ("Y".equalsIgnoreCase(active)) {
+            return "badge-active";
+        }
+        return "badge-inactive";
     }
 
-    public String dateClass(int year, int month, int day) {
-        LocalDate date = LocalDate.of(year, month, day);
-
-        String cls = "";
-
-        String dayName = date.getDayOfWeek().toString();
-
-        if ("SATURDAY".equals(dayName) || "SUNDAY".equals(dayName)) {
-            cls += " weekend-day";
-        }
-
-        if (date.equals(LocalDate.now())) {
-            cls += " today-day";
-        }
-
-        return cls;
+    public String roleClass(String role) {
+        if ("ADMIN".equalsIgnoreCase(role)) return "badge-admin";
+        if ("TEAM_LEAD".equalsIgnoreCase(role)) return "badge-lead";
+        return "badge-user";
     }
 %>
 
@@ -88,7 +57,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Shift Roster - DBA Monitor</title>
+<title>User Management - DBA Monitor</title>
 
 <style>
 * {
@@ -154,109 +123,9 @@ h1 {
     margin-bottom: 18px;
 }
 
-.filter-row {
-    display: flex;
-    align-items: end;
-    gap: 12px;
-    flex-wrap: wrap;
-}
-
-label {
-    display: block;
-    font-size: 12px;
-    color: #cbd5e1;
-    font-weight: 900;
-    text-transform: uppercase;
-    margin-bottom: 6px;
-}
-
-select, input {
-    height: 39px;
-    border: 1px solid rgba(148,163,184,.30);
-    background: rgba(2,6,23,.58);
-    color: #e5eefb;
-    border-radius: 11px;
-    padding: 0 10px;
-    outline: none;
-}
-
-button {
-    height: 40px;
-    border: none;
-    border-radius: 11px;
-    background: #22d3ee;
-    color: #06202a;
-    font-weight: 900;
-    padding: 0 16px;
-    cursor: pointer;
-}
-
-button:hover {
-    filter: brightness(1.08);
-}
-
-.month-title {
-    font-size: 21px;
-    font-weight: 900;
-    color: #e5eefb;
-    margin-top: 16px;
-}
-
-.month-subtitle {
-    color: #94a3b8;
-    font-size: 13px;
-    margin-top: 5px;
-}
-
-.legend {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    margin-top: 14px;
-}
-
-.badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 6px 10px;
-    border-radius: 999px;
-    font-size: 12px;
-    font-weight: 900;
-}
-
-.M {
-    background: rgba(59,130,246,.25);
-    color: #bfdbfe;
-}
-
-.S {
-    background: rgba(34,197,94,.22);
-    color: #bbf7d0;
-}
-
-.N {
-    background: rgba(168,85,247,.24);
-    color: #e9d5ff;
-}
-
-.G {
-    background: rgba(14,165,233,.20);
-    color: #bae6fd;
-}
-
-.WO {
-    background: rgba(100,116,139,.35);
-    color: #e2e8f0;
-}
-
-.L {
-    background: rgba(239,68,68,.25);
-    color: #fecaca;
-}
-
-.NA {
-    background: rgba(148,163,184,.12);
-    color: #cbd5e1;
+.card h2 {
+    margin: 0 0 14px;
+    font-size: 20px;
 }
 
 .notice {
@@ -279,168 +148,199 @@ button:hover {
     font-weight: 800;
 }
 
-.current-box {
-    display: flex;
+.form-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 1.1fr 1fr 1.1fr auto;
     gap: 12px;
-    align-items: center;
-    flex-wrap: wrap;
+    align-items: end;
 }
 
-.user-pill {
-    display: inline-flex;
-    align-items: center;
-    padding: 6px 10px;
-    border-radius: 999px;
-    background: rgba(34,211,238,0.16);
-    color: #a5f3fc;
+label {
+    display: block;
     font-size: 12px;
+    color: #cbd5e1;
     font-weight: 900;
-    margin-right: 4px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
 }
 
-.empty-pill {
-    display: inline-flex;
-    align-items: center;
-    padding: 6px 10px;
-    border-radius: 999px;
-    background: rgba(239,68,68,0.16);
-    color: #fecaca;
-    font-size: 12px;
+input, select {
+    width: 100%;
+    height: 40px;
+    border: 1px solid rgba(148,163,184,.30);
+    background: rgba(2,6,23,.58);
+    color: #e5eefb;
+    border-radius: 11px;
+    padding: 0 10px;
+    outline: none;
+}
+
+input::placeholder {
+    color: #64748b;
+}
+
+button {
+    height: 40px;
+    border: none;
+    border-radius: 11px;
+    background: #22d3ee;
+    color: #06202a;
     font-weight: 900;
+    padding: 0 16px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+button:hover {
+    filter: brightness(1.08);
+}
+
+.btn-small {
+    height: 32px;
+    padding: 0 10px;
+    border-radius: 9px;
+    font-size: 12px;
+}
+
+.btn-secondary {
+    background: rgba(148,163,184,.16);
+    color: #e5eefb;
+    border: 1px solid rgba(148,163,184,.25);
+}
+
+.btn-danger {
+    background: #ef4444;
+    color: white;
+}
+
+.btn-success {
+    background: #22c55e;
+    color: #052e16;
 }
 
 .table-wrap {
     overflow: auto;
     border: 1px solid rgba(148,163,184,.20);
     border-radius: 16px;
-    max-height: 70vh;
 }
 
 table {
-    border-collapse: separate;
-    border-spacing: 0;
-    min-width: 1250px;
-    width: max-content;
+    width: 100%;
+    min-width: 1050px;
+    border-collapse: collapse;
 }
 
 th, td {
     border-bottom: 1px solid rgba(148,163,184,.16);
-    border-right: 1px solid rgba(148,163,184,.12);
-    padding: 7px;
-    text-align: center;
-    white-space: nowrap;
+    padding: 12px;
+    text-align: left;
+    vertical-align: top;
+    font-size: 14px;
 }
 
 th {
-    background: rgba(2,6,23,.88);
+    background: rgba(2,6,23,.75);
     color: #cbd5e1;
-    position: sticky;
-    top: 0;
-    z-index: 5;
+    text-transform: uppercase;
     font-size: 12px;
-}
-
-.name-col {
-    position: sticky;
-    left: 0;
-    z-index: 6;
-    background: rgba(15,23,42,.98);
-    text-align: left;
-    min-width: 180px;
     font-weight: 900;
 }
 
-th.name-col {
-    z-index: 8;
-    background: rgba(2,6,23,.98);
-}
-
-.day-head {
-    min-width: 72px;
-    padding: 8px 6px;
-}
-
-.day-num {
-    font-size: 15px;
+.user-main {
     font-weight: 900;
     color: #f8fafc;
 }
 
-.day-name {
-    font-size: 10px;
-    font-weight: 900;
+.user-sub {
+    margin-top: 4px;
     color: #94a3b8;
-    text-transform: uppercase;
-    margin-top: 3px;
+    font-size: 12px;
 }
 
-.weekend-day {
-    background: rgba(245,158,11,0.13) !important;
+.badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 900;
 }
 
-.today-day {
-    box-shadow: inset 0 0 0 2px rgba(34,211,238,0.75);
+.badge-active {
+    background: rgba(34,197,94,.16);
+    color: #86efac;
 }
 
-.shift-select {
-    width: 66px;
+.badge-inactive {
+    background: rgba(239,68,68,.18);
+    color: #fecaca;
+}
+
+.badge-admin {
+    background: rgba(168,85,247,.20);
+    color: #e9d5ff;
+}
+
+.badge-lead {
+    background: rgba(59,130,246,.20);
+    color: #bfdbfe;
+}
+
+.badge-user {
+    background: rgba(34,211,238,.16);
+    color: #a5f3fc;
+}
+
+.inline-form {
+    display: flex;
+    gap: 7px;
+    align-items: center;
+    margin: 0;
+}
+
+.inline-form input {
+    width: 145px;
     height: 32px;
     border-radius: 9px;
     font-size: 12px;
-    font-weight: 900;
-    padding: 0 5px;
-    color: #ffffff;
-    border: 1px solid rgba(255,255,255,.18);
 }
 
-.shift-select.M {
-    background: rgba(37,99,235,.78);
-}
-
-.shift-select.S {
-    background: rgba(22,163,74,.75);
-}
-
-.shift-select.N {
-    background: rgba(126,34,206,.75);
-}
-
-.shift-select.G {
-    background: rgba(2,132,199,.75);
-}
-
-.shift-select.WO {
-    background: rgba(71,85,105,.84);
-}
-
-.shift-select.L {
-    background: rgba(220,38,38,.80);
-}
-
-.shift-select.NA {
-    background: rgba(30,41,59,.88);
-}
-
-.actions {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: 14px;
-    gap: 12px;
-}
-
-.small-text {
-    color: #94a3b8;
-    font-size: 13px;
-}
-
-.roster-tip {
-    margin-top: 8px;
-    color: #94a3b8;
+.inline-form select {
+    width: 120px;
+    height: 32px;
+    border-radius: 9px;
     font-size: 12px;
 }
 
-@media(max-width: 900px) {
+.action-stack {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.empty {
+    padding: 26px;
+    text-align: center;
+    color: #94a3b8;
+    border: 1px dashed rgba(148,163,184,.30);
+    border-radius: 16px;
+}
+
+.info-note {
+    color: #94a3b8;
+    font-size: 13px;
+    margin-top: 10px;
+    line-height: 1.5;
+}
+
+@media(max-width: 1100px) {
+    .form-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media(max-width: 750px) {
     .topbar {
         align-items: flex-start;
         flex-direction: column;
@@ -448,6 +348,10 @@ th.name-col {
 
     .page {
         padding: 16px;
+    }
+
+    .form-grid {
+        grid-template-columns: 1fr;
     }
 }
 </style>
@@ -459,15 +363,21 @@ th.name-col {
 
     <div class="topbar">
         <div>
-            <h1>Shift Roster</h1>
-            <div class="subtitle">Monthly Excel-style roster for DBA team shifts.</div>
+            <h1>User Management</h1>
+            <div class="subtitle">
+                Admin panel to create users, reset passwords, change roles, and activate/deactivate access.
+            </div>
         </div>
 
         <a class="back-link" href="<%= ctx %>/refreshstats">← Back to Dashboard</a>
     </div>
 
     <% if ("1".equals(saved)) { %>
-        <div class="notice">Roster saved successfully.</div>
+        <div class="notice">User changes saved successfully.</div>
+    <% } %>
+
+    <% if ("selfDeactivate".equals(error)) { %>
+        <div class="error">You cannot deactivate your own currently logged-in account.</div>
     <% } %>
 
     <% if (errorMsg != null) { %>
@@ -475,135 +385,188 @@ th.name-col {
     <% } %>
 
     <div class="card">
-        <form method="get" action="<%= ctx %>/shiftroster" class="filter-row">
-            <div>
-                <label>Month</label>
-                <select name="month">
-                    <% for(int m = 1; m <= 12; m++){ %>
-                        <option value="<%= m %>" <%= m == month ? "selected" : "" %>>
-                            <%= Month.of(m).getDisplayName(TextStyle.SHORT, Locale.ENGLISH) %>
-                        </option>
-                    <% } %>
-                </select>
+        <h2>Create New User</h2>
+
+        <form method="post" action="<%= ctx %>/usermanagement" onsubmit="return validateCreateUser(this);">
+            <input type="hidden" name="action" value="create">
+
+            <div class="form-grid">
+                <div>
+                    <label>Username</label>
+                    <input type="text" name="username" placeholder="Example: v1022483" required>
+                </div>
+
+                <div>
+                    <label>Password</label>
+                    <input type="password" name="password" placeholder="Temporary password" required>
+                </div>
+
+                <div>
+                    <label>Role</label>
+                    <select name="role" required>
+                        <option value="USER">USER</option>
+                        <option value="TEAM_LEAD">TEAM_LEAD</option>
+                        <option value="ADMIN">ADMIN</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label>Display Name</label>
+                    <input type="text" name="displayName" placeholder="Optional name">
+                </div>
+
+                <div>
+                    <button type="submit">Create User</button>
+                </div>
             </div>
 
-            <div>
-                <label>Year</label>
-                <input type="number" name="year" value="<%= year %>" min="2024" max="2035">
+            <div class="info-note">
+                Usernames are used internally for login, task assignment, roster, monitoring audit and reports.
+                Do not delete users; deactivate them if access should be removed.
             </div>
-
-            <button type="submit">Load Roster</button>
         </form>
-
-        <div class="month-title">Roster for <%= esc(monthTitle) %></div>
-        <div class="month-subtitle">
-            Dates are shown with weekday names. Weekend and today are highlighted automatically.
-        </div>
-
-        <div class="legend">
-            <span class="badge M">M = Morning 7:30 - 3:30</span>
-            <span class="badge S">S = Second 2 - 10</span>
-            <span class="badge N">N = Night 10 - 7</span>
-            <span class="badge G">G = General</span>
-            <span class="badge WO">WO = Week Off</span>
-            <span class="badge L">L = Leave</span>
-            <span class="badge NA">NA = Not Assigned</span>
-        </div>
     </div>
 
     <div class="card">
-        <div class="current-box">
-            <span class="badge <%= esc(currentShift) %>">
-                Current Shift: <%= esc(currentShift) %> - <%= shiftName(currentShift) %>
-            </span>
+        <h2>Existing Users</h2>
 
-            <span class="small-text">Working now:</span>
+        <% if (users.isEmpty()) { %>
 
-            <% if(currentShiftUsers.isEmpty()){ %>
-                <span class="empty-pill">No roster found</span>
-            <% } else { %>
-                <% for(String u : currentShiftUsers){ %>
-                    <span class="user-pill"><%= esc(u) %></span>
-                <% } %>
-            <% } %>
-        </div>
-    </div>
+            <div class="empty">No users found.</div>
 
-    <form method="post" action="<%= ctx %>/shiftroster">
+        <% } else { %>
 
-        <input type="hidden" name="month" value="<%= month %>">
-        <input type="hidden" name="year" value="<%= year %>">
-
-        <div class="card">
             <div class="table-wrap">
                 <table>
                     <thead>
                         <tr>
-                            <th class="name-col">Team Member</th>
-
-                            <% for(int day = 1; day <= daysInMonth; day++){ %>
-                                <th class="day-head <%= dateClass(year, month, day) %>">
-                                    <div class="day-num"><%= day %></div>
-                                    <div class="day-name"><%= shortDayName(year, month, day) %></div>
-                                </th>
-                            <% } %>
+                            <th>User</th>
+                            <th>Role</th>
+                            <th>Status</th>
+                            <th>Created At</th>
+                            <th>Update Display Name</th>
+                            <th>Change Role</th>
+                            <th>Reset Password</th>
+                            <th>Access</th>
                         </tr>
                     </thead>
 
                     <tbody>
-                        <% for(int i = 0; i < users.size(); i++){ 
-                            String username = users.get(i);
-                        %>
-                            <tr>
-                                <td class="name-col"><%= esc(username) %></td>
+                    <% for (AdminUser u : users) { %>
+                        <tr>
+                            <td>
+                                <div class="user-main"><%= esc(u.getUsername()) %></div>
+                                <div class="user-sub">
+                                    Display: <%= esc(u.getDisplayName()) %>
+                                </div>
+                            </td>
 
-                                <% for(int day = 1; day <= daysInMonth; day++){ 
-                                    String key = username + "#" + day;
-                                    String shift = rosterMap.get(key);
+                            <td>
+                                <span class="badge <%= roleClass(u.getRole()) %>">
+                                    <%= esc(u.getRole()) %>
+                                </span>
+                            </td>
 
-                                    if(shift == null || shift.trim().equals("")) {
-                                        shift = "NA";
-                                    }
-                                %>
-                                    <td class="<%= dateClass(year, month, day) %>">
-                                        <select name="shift_<%= i %>_<%= day %>"
-                                                class="shift-select <%= esc(shift) %>"
-                                                onchange="updateShiftColor(this)">
-                                            <option value="NA" <%= selected(shift, "NA") %>>NA</option>
-                                            <option value="M" <%= selected(shift, "M") %>>M</option>
-                                            <option value="S" <%= selected(shift, "S") %>>S</option>
-                                            <option value="N" <%= selected(shift, "N") %>>N</option>
-                                            <option value="G" <%= selected(shift, "G") %>>G</option>
-                                            <option value="WO" <%= selected(shift, "WO") %>>WO</option>
-                                            <option value="L" <%= selected(shift, "L") %>>L</option>
-                                        </select>
-                                    </td>
-                                <% } %>
-                            </tr>
-                        <% } %>
+                            <td>
+                                <span class="badge <%= activeClass(u.getActive()) %>">
+                                    <%= activeText(u.getActive()) %>
+                                </span>
+                            </td>
+
+                            <td>
+                                <%= esc(u.getCreatedAt()) %>
+                            </td>
+
+                            <td>
+                                <form method="post" action="<%= ctx %>/usermanagement" class="inline-form">
+                                    <input type="hidden" name="action" value="updateDisplayName">
+                                    <input type="hidden" name="id" value="<%= u.getId() %>">
+                                    <input type="text" name="displayName" value="<%= esc(u.getDisplayName()) %>" placeholder="Display name">
+                                    <button class="btn-small btn-secondary" type="submit">Save</button>
+                                </form>
+                            </td>
+
+                            <td>
+                                <form method="post" action="<%= ctx %>/usermanagement" class="inline-form">
+                                    <input type="hidden" name="action" value="updateRole">
+                                    <input type="hidden" name="id" value="<%= u.getId() %>">
+
+                                    <select name="role">
+                                        <option value="USER" <%= selected(u.getRole(), "USER") %>>USER</option>
+                                        <option value="TEAM_LEAD" <%= selected(u.getRole(), "TEAM_LEAD") %>>TEAM_LEAD</option>
+                                        <option value="ADMIN" <%= selected(u.getRole(), "ADMIN") %>>ADMIN</option>
+                                    </select>
+
+                                    <button class="btn-small btn-secondary" type="submit">Update</button>
+                                </form>
+                            </td>
+
+                            <td>
+                                <form method="post" action="<%= ctx %>/usermanagement" class="inline-form"
+                                      onsubmit="return validateResetPassword(this);">
+                                    <input type="hidden" name="action" value="resetPassword">
+                                    <input type="hidden" name="id" value="<%= u.getId() %>">
+                                    <input type="password" name="newPassword" placeholder="New password">
+                                    <button class="btn-small btn-secondary" type="submit">Reset</button>
+                                </form>
+                            </td>
+
+                            <td>
+                                <div class="action-stack">
+                                    <% if ("Y".equalsIgnoreCase(u.getActive())) { %>
+                                        <form method="post" action="<%= ctx %>/usermanagement" style="margin:0;"
+                                              onsubmit="return confirm('Deactivate user <%= esc(u.getUsername()) %>?');">
+                                            <input type="hidden" name="action" value="deactivate">
+                                            <input type="hidden" name="id" value="<%= u.getId() %>">
+                                            <button class="btn-small btn-danger" type="submit">Deactivate</button>
+                                        </form>
+                                    <% } else { %>
+                                        <form method="post" action="<%= ctx %>/usermanagement" style="margin:0;">
+                                            <input type="hidden" name="action" value="activate">
+                                            <input type="hidden" name="id" value="<%= u.getId() %>">
+                                            <button class="btn-small btn-success" type="submit">Activate</button>
+                                        </form>
+                                    <% } %>
+                                </div>
+                            </td>
+                        </tr>
+                    <% } %>
                     </tbody>
                 </table>
             </div>
 
-            <div class="actions">
-                <div>
-                    <div class="small-text">Save after filling the monthly roster.</div>
-                    <div class="roster-tip">
-                        Tip: Horizontal scroll is enabled. Team member column stays fixed.
-                    </div>
-                </div>
-
-                <button type="submit">Save Roster</button>
-            </div>
-        </div>
-
-    </form>
+        <% } %>
+    </div>
 
 </div>
 
 <script>
-function updateShiftColor(select) {
-    select.className = "shift-select " + select.value;
+function validateCreateUser(form) {
+    var username = form.username.value.trim();
+    var password = form.password.value.trim();
+
+    if (username.length < 3) {
+        alert("Username should be at least 3 characters.");
+        return false;
+    }
+
+    if (password.length < 4) {
+        alert("Password should be at least 4 characters.");
+        return false;
+    }
+
+    return true;
+}
+
+function validateResetPassword(form) {
+    var password = form.newPassword.value.trim();
+
+    if (password.length < 4) {
+        alert("New password should be at least 4 characters.");
+        return false;
+    }
+
+    return confirm("Reset password for this user?");
 }
 </script>
 
