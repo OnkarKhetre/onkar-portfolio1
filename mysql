@@ -141,3 +141,32 @@ CREATE TABLE IF NOT EXISTS task_history (
 
     INDEX idx_history_task (task_id)
 );
+
+
+
+
+
+USE dba_monitor;
+
+CREATE TABLE IF NOT EXISTS shift_roster (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+
+    roster_date DATE NOT NULL,
+    username VARCHAR(80) NOT NULL,
+
+    shift_code VARCHAR(10) DEFAULT 'NA',
+    status VARCHAR(30) DEFAULT 'NOT_ASSIGNED',
+
+    remarks VARCHAR(300),
+
+    created_by VARCHAR(80),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+    updated_by VARCHAR(80),
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    UNIQUE KEY uq_roster_date_user (roster_date, username),
+    INDEX idx_roster_date (roster_date),
+    INDEX idx_roster_shift (shift_code),
+    INDEX idx_roster_status (status)
+);
