@@ -1,4 +1,88 @@
-<a href="<%= request.getContextPath() %>/shiftroster" class="nav-item">
-    <span class="nav-icon">📅</span>
-    <span>Shift Roster</span>
-</a>
+public long createOrTouchNotificationTask(String site,
+                                          String target,
+                                          String objectType,
+                                          String objectName,
+                                          String title,
+                                          String description,
+                                          String priority) throws Exception {
+
+    String cleanSite = clean(site);
+    String cleanTarget = clean(target);
+    String cleanObjectType = clean(objectType);
+    String cleanObjectName = clean(objectName);
+    String cleanPriority = normalizePriority(priority);
+
+    String currentShiftCode = new ShiftRosterService().getCurrentShiftCode();
+
+    String sourceKey = "NOTIF|" + cleanSite + "|" + cleanTarget + "|" + cleanObjectType + "|" + cleanObjectName;
+    String activeKey = sourceKey;
+
+    String sql =
+            "INSERT INTO task_items " +
+            "(source_type, source_key, active_key, site, target, object_type, object_name, shift_code, " +
+            "title, description, priority, status, created_by, last_seen_at, occurrence_count) " +
+            "VALUES ('NOTIFICATION', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', 'SYSTEM', NOW(), 1) " +
+            "ON DUPLICATE KEY UPDATE " +
+            "last_seen_at = NOW(), " +
+            "occurrence_count = IFNULL(occurrence_count, 1) + 1, " +
+
+            /*
+             * If task is still unassigned, move it to current shift queue.
+             * If someone already took the task, do not change shift_code.
+             */
+            "shift_code = CASE " +
+            "   WHEN assigned_to IS NULL OR assigned_to = '' THEN VALUES(shift_code) " +
+            "   ELSE shift_code " +
+            "END, " +
+
+            "description = ?, " +
+            "priority = CASE " +
+            "   WHEN priority = 'CRITICAL' THEN 'CRITICAL' " +
+            "   WHEN ? = 'CRITICAL' THEN 'CRITICAL' " +
+            "   WHEN priority = 'HIGH' THEN 'HIGH' " +
+            "   WHEN ? = 'HIGH' THEN 'HIGH' " +
+            "   ELSE priority " +
+            "END";
+
+    Connection conn = null;
+    PreparedStatement ps = null;
+
+    try {
+        conn = MysqlConnection.getConnection();
+
+        ps = conn.prepareStatement(sql);
+
+        ps.setString(1, sourceKey);
+        ps.setString(2, activeKey);
+        ps.setString(3, cleanSite);
+        ps.setString(4, cleanTarget);
+        ps.setString(5, cleanObjectType);
+        ps.setString(6, cleanObjectName);
+        ps.setString(7, currentShiftCode);
+        ps.setString(8, safeText(title));
+        ps.setString(9, safeText(description));
+        ps.setString(10, cleanPriority);
+
+        ps.setString(11, safeText(description));
+        ps.setString(12, cleanPriority);
+        ps.setString(13, cleanPriority);
+
+        int affectedRows = ps.executeUpdate();
+
+        long taskId = getTaskIdByActiveKey(conn, activeKey);
+
+        if (affectedRows == 1) {
+            logHistory(conn, taskId, "AUTO_CREATE", null, "OPEN", null, null, "SYSTEM",
+                    "Task automatically created from notification for shift " + currentShiftCode);
+        }
+
+        return taskId;
+
+    } finally {
+        if (ps != null) {
+            try { ps.close(); } catch (Exception e) {}
+        }
+
+        MysqlConnection.closeConnection(conn);
+    }
+}
