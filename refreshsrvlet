@@ -1,9 +1,9 @@
 package com.dba.controller;
 
 import java.io.IOException;
-import java.util.List;
+import java.util.Map;
 
-import com.dba.models.TaskItem;
+import com.dba.service.ShiftRosterService;
 import com.dba.service.TaskService;
 
 import jakarta.servlet.ServletException;
@@ -13,207 +13,99 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 
-@WebServlet("/taskmanager")
-public class TaskManagerServlet extends HttpServlet {
+@WebServlet("/shifttasksummary")
+public class ShiftTaskSummaryServlet extends HttpServlet {
     private static final long serialVersionUID = 1L;
 
-    private TaskService service = new TaskService();
+    private TaskService taskService = new TaskService();
+    private ShiftRosterService shiftRosterService = new ShiftRosterService();
 
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
 
-        String status = request.getParameter("status");
-        String assignedTo = request.getParameter("assignedTo");
-        String priority = request.getParameter("priority");
-
-        if (status == null || status.trim().equals("")) status = "ALL";
-        if (assignedTo == null || assignedTo.trim().equals("")) assignedTo = "ALL";
-        if (priority == null || priority.trim().equals("")) priority = "ALL";
-
-        try {
-            List<TaskItem> tasks = service.getTasks(status, assignedTo, priority);
-            List<String> users = service.getActiveUsers();
-
-            request.setAttribute("tasks", tasks);
-            request.setAttribute("users", users);
-            request.setAttribute("statusFilter", status);
-            request.setAttribute("assignedFilter", assignedTo);
-            request.setAttribute("priorityFilter", priority);
-
-            request.getRequestDispatcher("/taskmanager.jsp").forward(request, response);
-
-        } catch (Exception e) {
-            e.printStackTrace();
-
-            request.setAttribute("errorMsg", e.getMessage());
-            request.getRequestDispatcher("/taskmanager.jsp").forward(request, response);
-        }
-    }
-
-    protected void doPost(HttpServletRequest request, HttpServletResponse response)
-            throws ServletException, IOException {
-
-        String action = request.getParameter("action");
-        String actor = getLoggedUsername(request);
-
-        try {
-            if ("create".equalsIgnoreCase(action)) {
-
-                TaskItem task = new TaskItem();
-
-                task.setSite(request.getParameter("site"));
-                task.setTarget(request.getParameter("target"));
-                task.setObjectType(request.getParameter("objectType"));
-                task.setObjectName(request.getParameter("objectName"));
-                task.setTitle(request.getParameter("title"));
-                task.setDescription(request.getParameter("description"));
-                task.setPriority(request.getParameter("priority"));
-                task.setAssignedTo(request.getParameter("assignedTo"));
-                task.setCreatedBy(actor);
-
-                service.createTask(task, actor);
-
-            } else if ("take".equalsIgnoreCase(action)) {
-
-                long id = Long.parseLong(request.getParameter("id"));
-                service.takeTask(id, actor);
-
-            } else if ("assign".equalsIgnoreCase(action)) {
-
-                long id = Long.parseLong(request.getParameter("id"));
-                String assignedTo = request.getParameter("assignedTo");
-                String remarks = request.getParameter("remarks");
-
-                if (!canChangeTask(request, id)) {
-                    response.sendRedirect(request.getContextPath() + "/taskmanager?error=permission");
-                    return;
-                }
-
-                service.assignTask(id, assignedTo, actor, remarks);
-
-            } else if ("complete".equalsIgnoreCase(action)) {
-
-                long id = Long.parseLong(request.getParameter("id"));
-                String remarks = request.getParameter("completionRemarks");
-
-                if (!canChangeTask(request, id)) {
-                    response.sendRedirect(request.getContextPath() + "/taskmanager?error=permission");
-                    return;
-                }
-
-                if (remarks == null || remarks.trim().equals("")) {
-                    remarks = "Task completed";
-                }
-
-                service.completeTask(id, actor, remarks);
-
-            } else if ("reopen".equalsIgnoreCase(action)) {
-
-                long id = Long.parseLong(request.getParameter("id"));
-
-                if (!isAdmin(request)) {
-                    response.sendRedirect(request.getContextPath() + "/taskmanager?error=permission");
-                    return;
-                }
-
-                service.reopenTask(id, actor, "Task reopened");
-
-            } else if ("cancel".equalsIgnoreCase(action)) {
-
-                long id = Long.parseLong(request.getParameter("id"));
-
-                if (!isAdmin(request)) {
-                    response.sendRedirect(request.getContextPath() + "/taskmanager?error=permission");
-                    return;
-                }
-
-                service.cancelTask(id, actor, "Task cancelled by admin");
-            }
-
-            response.sendRedirect(request.getContextPath() + "/taskmanager");
-
-        } catch (Exception e) {
-            e.printStackTrace();
-
-            request.setAttribute("errorMsg", e.getMessage());
-            doGet(request, response);
-        }
-    }
-
-    private boolean canChangeTask(HttpServletRequest request, long taskId) {
-
-        if (isAdmin(request)) {
-            return true;
-        }
-
-        String loggedUser = getLoggedUsername(request);
-
-        try {
-            TaskItem task = service.getTaskById(taskId);
-
-            if (task == null) {
-                return false;
-            }
-
-            if (loggedUser.equalsIgnoreCase(safe(task.getAssignedTo()))) {
-                return true;
-            }
-
-            if (loggedUser.equalsIgnoreCase(safe(task.getCreatedBy()))) {
-                return true;
-            }
-
-            if (safe(task.getAssignedTo()).equals("")) {
-                return true;
-            }
-
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-        return false;
-    }
-
-    private boolean isAdmin(HttpServletRequest request) {
+        response.setContentType("text/html;charset=UTF-8");
+        response.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
 
         HttpSession session = request.getSession(false);
 
-        if (session == null) {
-            return false;
+        if (session == null || session.getAttribute("loggedUser") == null) {
+            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            response.getWriter().write("");
+            return;
         }
 
-        String role = String.valueOf(session.getAttribute("loggedRole"));
+        try {
+            String currentShift = shiftRosterService.getCurrentShiftCode();
 
-        return "ADMIN".equalsIgnoreCase(role) || "TEAM_LEAD".equalsIgnoreCase(role);
-    }
+            Map<String, Integer> summary =
+                    taskService.getOpenShiftTaskSummary(currentShift);
 
-    private String getLoggedUsername(HttpServletRequest request) {
+            int total = summary.get("TOTAL");
+            int critical = summary.get("CRITICAL");
+            int high = summary.get("HIGH");
+            int normal = summary.get("NORMAL");
 
-        HttpSession session = request.getSession(false);
+            String ctx = request.getContextPath();
 
-        if (session == null) {
-            return "UNKNOWN";
+            if (total <= 0) {
+                response.getWriter().write(
+                        "<div class='shift-task-mini ok'>" +
+                            "<div class='shift-task-left'>" +
+                                "<div class='shift-task-icon'>✅</div>" +
+                                "<div>" +
+                                    "<div class='shift-task-title'>No Pending Shift Tasks</div>" +
+                                    "<div class='shift-task-sub'>Current shift: " + currentShift + "</div>" +
+                                "</div>" +
+                            "</div>" +
+                        "</div>"
+                );
+                return;
+            }
+
+            response.getWriter().write(
+                    "<div class='shift-task-mini alert'>" +
+                        "<div class='shift-task-left'>" +
+                            "<div class='shift-task-icon'>📌</div>" +
+                            "<div>" +
+                                "<div class='shift-task-title'>Current Shift Tasks: " + total + "</div>" +
+                                "<div class='shift-task-sub'>" +
+                                    "Shift: " + currentShift +
+                                    " | Critical: " + critical +
+                                    " | High: " + high +
+                                    " | Normal: " + normal +
+                                "</div>" +
+                            "</div>" +
+                        "</div>" +
+                        "<a class='shift-task-open' href='" + ctx + "/taskmanager?status=OPEN&assignedTo=UNASSIGNED&shift=CURRENT'>Open</a>" +
+                    "</div>"
+            );
+
+        } catch (Exception e) {
+            e.printStackTrace();
+
+            response.getWriter().write(
+                    "<div class='shift-task-mini error-mini'>" +
+                        "<div class='shift-task-left'>" +
+                            "<div class='shift-task-icon'>⚠️</div>" +
+                            "<div>" +
+                                "<div class='shift-task-title'>Shift task summary failed</div>" +
+                                "<div class='shift-task-sub'>" + safe(e.getMessage()) + "</div>" +
+                            "</div>" +
+                        "</div>" +
+                    "</div>"
+            );
         }
-
-        Object username = session.getAttribute("username");
-
-        if (username == null) {
-            username = session.getAttribute("loggedUser");
-        }
-
-        if (username == null) {
-            username = session.getAttribute("loggedDisplayName");
-        }
-
-        if (username == null) {
-            return "UNKNOWN";
-        }
-
-        return String.valueOf(username);
     }
 
     private String safe(String value) {
-        if (value == null) return "";
-        return value.trim();
+        if (value == null) {
+            return "";
+        }
+
+        return value
+                .replace("&", "&amp;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;")
+                .replace("\"", "&quot;");
     }
 }
