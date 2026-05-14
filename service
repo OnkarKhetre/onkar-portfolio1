@@ -1,117 +1,29 @@
 package com.dba.service;
 
 import java.sql.Connection;
+import java.sql.Date;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import com.dba.connection.MysqlConnection;
-import com.dba.models.TaskPerformance;
 
-public class TaskPerformanceService {
-
-    public List<TaskPerformance> getPerformance(String fromDate, String toDate, String userFilter) throws Exception {
-
-        List<TaskPerformance> list = new ArrayList<TaskPerformance>();
-
-        String sql =
-            "SELECT u.username, " +
-
-            "SUM(CASE WHEN t.created_by = u.username THEN 1 ELSE 0 END) AS created_tasks, " +
-
-            "SUM(CASE WHEN t.assigned_to = u.username THEN 1 ELSE 0 END) AS assigned_tasks, " +
-
-            "SUM(CASE WHEN t.completed_by = u.username THEN 1 ELSE 0 END) AS completed_tasks, " +
-
-            "SUM(CASE WHEN t.assigned_to = u.username AND t.status <> 'DONE' AND t.status <> 'CANCELLED' THEN 1 ELSE 0 END) AS pending_tasks, " +
-
-            "SUM(CASE WHEN t.completed_by = u.username AND t.priority = 'CRITICAL' THEN 1 ELSE 0 END) AS critical_completed, " +
-
-            "SUM(CASE WHEN t.completed_by = u.username AND t.priority = 'HIGH' THEN 1 ELSE 0 END) AS high_completed, " +
-
-            "SUM(CASE WHEN t.assigned_to = u.username THEN IFNULL(t.reassign_count,0) ELSE 0 END) AS total_reassign_count, " +
-
-            "IFNULL(AVG(CASE WHEN t.completed_by = u.username AND t.completed_at IS NOT NULL " +
-            "THEN TIMESTAMPDIFF(MINUTE, t.created_at, t.completed_at) END),0) AS avg_completion_minutes " +
-
-            "FROM app_users u " +
-            "LEFT JOIN task_items t ON " +
-            "(t.created_by = u.username OR t.assigned_to = u.username OR t.completed_by = u.username) ";
-
-        List<String> params = new ArrayList<String>();
-
-        sql += "WHERE u.active = 'Y' ";
-
-        if (fromDate != null && fromDate.trim().length() > 0) {
-            sql += "AND DATE(IFNULL(t.created_at, NOW())) >= ? ";
-            params.add(fromDate.trim());
-        }
-
-        if (toDate != null && toDate.trim().length() > 0) {
-            sql += "AND DATE(IFNULL(t.created_at, NOW())) <= ? ";
-            params.add(toDate.trim());
-        }
-
-        if (userFilter != null && userFilter.trim().length() > 0 && !"ALL".equalsIgnoreCase(userFilter)) {
-            sql += "AND u.username = ? ";
-            params.add(userFilter.trim());
-        }
-
-        sql += "GROUP BY u.username ORDER BY completed_tasks DESC, pending_tasks ASC, u.username";
-
-        Connection conn = null;
-        PreparedStatement ps = null;
-        ResultSet rs = null;
-
-        try {
-            conn = MysqlConnection.getConnection();
-            ps = conn.prepareStatement(sql);
-
-            for (int i = 0; i < params.size(); i++) {
-                ps.setString(i + 1, params.get(i));
-            }
-
-            rs = ps.executeQuery();
-
-            while (rs.next()) {
-                TaskPerformance p = new TaskPerformance();
-
-                p.setUsername(rs.getString("username"));
-                p.setCreatedTasks(rs.getInt("created_tasks"));
-                p.setAssignedTasks(rs.getInt("assigned_tasks"));
-                p.setCompletedTasks(rs.getInt("completed_tasks"));
-                p.setPendingTasks(rs.getInt("pending_tasks"));
-                p.setCriticalCompleted(rs.getInt("critical_completed"));
-                p.setHighCompleted(rs.getInt("high_completed"));
-                p.setTotalReassignCount(rs.getInt("total_reassign_count"));
-
-                double minutes = rs.getDouble("avg_completion_minutes");
-                p.setAvgCompletionHours(minutes / 60.0);
-
-                list.add(p);
-            }
-
-        } finally {
-            if (rs != null) {
-                try { rs.close(); } catch (Exception e) {}
-            }
-
-            if (ps != null) {
-                try { ps.close(); } catch (Exception e) {}
-            }
-
-            MysqlConnection.closeConnection(conn);
-        }
-
-        return list;
-    }
+public class ShiftRosterService {
 
     public List<String> getActiveUsers() throws Exception {
 
         List<String> users = new ArrayList<String>();
 
-        String sql = "SELECT username FROM app_users WHERE active = 'Y' ORDER BY username";
+        String sql =
+                "SELECT username " +
+                "FROM app_users " +
+                "WHERE active = 'Y' " +
+                "ORDER BY username";
 
         Connection conn = null;
         PreparedStatement ps = null;
@@ -139,5 +51,209 @@ public class TaskPerformanceService {
         }
 
         return users;
+    }
+
+    public Map<String, String> getMonthlyRoster(int year, int month) throws Exception {
+
+        Map<String, String> rosterMap = new HashMap<String, String>();
+
+        String sql =
+                "SELECT username, DAY(roster_date) AS day_no, shift_code " +
+                "FROM shift_roster " +
+                "WHERE YEAR(roster_date) = ? " +
+                "AND MONTH(roster_date) = ?";
+
+        Connection conn = null;
+        PreparedStatement ps = null;
+        ResultSet rs = null;
+
+        try {
+            conn = MysqlConnection.getConnection();
+            ps = conn.prepareStatement(sql);
+
+            ps.setInt(1, year);
+            ps.setInt(2, month);
+
+            rs = ps.executeQuery();
+
+            while (rs.next()) {
+                String username = rs.getString("username");
+                int dayNo = rs.getInt("day_no");
+                String shiftCode = rs.getString("shift_code");
+
+                rosterMap.put(username + "#" + dayNo, shiftCode);
+            }
+
+        } finally {
+            if (rs != null) {
+                try { rs.close(); } catch (Exception e) {}
+            }
+
+            if (ps != null) {
+                try { ps.close(); } catch (Exception e) {}
+            }
+
+            MysqlConnection.closeConnection(conn);
+        }
+
+        return rosterMap;
+    }
+
+    public void saveMonthlyRoster(int year,
+                                  int month,
+                                  List<String> users,
+                                  Map<String, String> shiftMap,
+                                  String actor) throws Exception {
+
+        String sql =
+                "INSERT INTO shift_roster " +
+                "(roster_date, username, shift_code, status, created_by, updated_by) " +
+                "VALUES (?, ?, ?, ?, ?, ?) " +
+                "ON DUPLICATE KEY UPDATE " +
+                "shift_code = VALUES(shift_code), " +
+                "status = VALUES(status), " +
+                "updated_by = VALUES(updated_by), " +
+                "updated_at = NOW()";
+
+        Connection conn = null;
+        PreparedStatement ps = null;
+
+        try {
+            conn = MysqlConnection.getConnection();
+            ps = conn.prepareStatement(sql);
+
+            int daysInMonth = LocalDate.of(year, month, 1).lengthOfMonth();
+
+            for (String username : users) {
+
+                for (int day = 1; day <= daysInMonth; day++) {
+
+                    String key = username + "#" + day;
+                    String shiftCode = shiftMap.get(key);
+
+                    if (shiftCode == null || shiftCode.trim().equals("")) {
+                        shiftCode = "NA";
+                    }
+
+                    shiftCode = shiftCode.trim().toUpperCase();
+
+                    LocalDate rosterDate = LocalDate.of(year, month, day);
+
+                    ps.setDate(1, Date.valueOf(rosterDate));
+                    ps.setString(2, username);
+                    ps.setString(3, shiftCode);
+                    ps.setString(4, statusFromShift(shiftCode));
+                    ps.setString(5, actor);
+                    ps.setString(6, actor);
+
+                    ps.addBatch();
+                }
+            }
+
+            ps.executeBatch();
+
+        } finally {
+            if (ps != null) {
+                try { ps.close(); } catch (Exception e) {}
+            }
+
+            MysqlConnection.closeConnection(conn);
+        }
+    }
+
+    public List<String> getWorkingUsersForDateAndShift(LocalDate date, String shiftCode) throws Exception {
+
+        List<String> users = new ArrayList<String>();
+
+        String sql =
+                "SELECT username " +
+                "FROM shift_roster " +
+                "WHERE roster_date = ? " +
+                "AND shift_code = ? " +
+                "AND status = 'WORKING' " +
+                "ORDER BY username";
+
+        Connection conn = null;
+        PreparedStatement ps = null;
+        ResultSet rs = null;
+
+        try {
+            conn = MysqlConnection.getConnection();
+            ps = conn.prepareStatement(sql);
+
+            ps.setDate(1, Date.valueOf(date));
+            ps.setString(2, shiftCode);
+
+            rs = ps.executeQuery();
+
+            while (rs.next()) {
+                users.add(rs.getString("username"));
+            }
+
+        } finally {
+            if (rs != null) {
+                try { rs.close(); } catch (Exception e) {}
+            }
+
+            if (ps != null) {
+                try { ps.close(); } catch (Exception e) {}
+            }
+
+            MysqlConnection.closeConnection(conn);
+        }
+
+        return users;
+    }
+
+    public String getCurrentShiftCode() {
+
+        LocalTime now = LocalTime.now();
+
+        int totalMinutes = now.getHour() * 60 + now.getMinute();
+
+        int morningStart = 7 * 60 + 30;   // 07:30
+        int morningEnd = 15 * 60 + 30;    // 15:30
+
+        int secondStart = 14 * 60;        // 14:00
+        int secondEnd = 22 * 60;          // 22:00
+
+        if (totalMinutes >= morningStart && totalMinutes < morningEnd) {
+            return "M";
+        }
+
+        if (totalMinutes >= secondStart && totalMinutes < secondEnd) {
+            return "S";
+        }
+
+        return "N";
+    }
+
+    public String statusFromShift(String shiftCode) {
+
+        if ("M".equalsIgnoreCase(shiftCode)) {
+            return "WORKING";
+        }
+
+        if ("S".equalsIgnoreCase(shiftCode)) {
+            return "WORKING";
+        }
+
+        if ("N".equalsIgnoreCase(shiftCode)) {
+            return "WORKING";
+        }
+
+        if ("G".equalsIgnoreCase(shiftCode)) {
+            return "WORKING";
+        }
+
+        if ("WO".equalsIgnoreCase(shiftCode)) {
+            return "WEEKOFF";
+        }
+
+        if ("L".equalsIgnoreCase(shiftCode)) {
+            return "LEAVE";
+        }
+
+        return "NOT_ASSIGNED";
     }
 }
