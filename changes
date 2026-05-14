@@ -1,34 +1,4 @@
-function loadShiftTaskSummary() {
-    var box = document.getElementById("shiftTaskSummaryBox");
-
-    if (!box) {
-        return;
-    }
-
-    fetch("<%= request.getContextPath() %>/shifttasksummary", {
-        method: "GET",
-        cache: "no-store"
-    })
-    .then(function(response) {
-        return response.text();
-    })
-    .then(function(html) {
-        box.innerHTML = html;
-    })
-    .catch(function(error) {
-        box.innerHTML =
-            "<div class='shift-task-mini error-mini'>" +
-                "<div class='shift-task-left'>" +
-                    "<div class='shift-task-icon'>⚠️</div>" +
-                    "<div>" +
-                        "<div class='shift-task-title'>Unable to load shift tasks</div>" +
-                        "<div class='shift-task-sub'>" + error + "</div>" +
-                    "</div>" +
-                "</div>" +
-            "</div>";
-    });
-}
-
-setTimeout(function() {
-    loadShiftTaskSummary();
-}, 1200);
+<a href="<%= request.getContextPath() %>/usermanagement" class="nav-item">
+    <span class="nav-icon">👤</span>
+    <span>User Management</span>
+</a>
