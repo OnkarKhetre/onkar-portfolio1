@@ -1,10 +1,10 @@
 package com.dba.controller;
 
 import java.io.IOException;
-import java.util.Map;
+import java.util.List;
 
-import com.dba.service.ShiftRosterService;
-import com.dba.service.TaskService;
+import com.dba.models.AdminUser;
+import com.dba.service.UserAdminService;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.WebServlet;
@@ -13,99 +13,150 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 
-@WebServlet("/shifttasksummary")
-public class ShiftTaskSummaryServlet extends HttpServlet {
+@WebServlet("/usermanagement")
+public class UserAdminServlet extends HttpServlet {
     private static final long serialVersionUID = 1L;
 
-    private TaskService taskService = new TaskService();
-    private ShiftRosterService shiftRosterService = new ShiftRosterService();
+    private UserAdminService service = new UserAdminService();
 
+    @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
 
-        response.setContentType("text/html;charset=UTF-8");
-        response.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
-
-        HttpSession session = request.getSession(false);
-
-        if (session == null || session.getAttribute("loggedUser") == null) {
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.getWriter().write("");
+        if (!isAdmin(request)) {
+            response.sendRedirect(request.getContextPath() + "/refreshstats");
             return;
         }
 
         try {
-            String currentShift = shiftRosterService.getCurrentShiftCode();
+            List<AdminUser> users = service.getAllUsers();
 
-            Map<String, Integer> summary =
-                    taskService.getOpenShiftTaskSummary(currentShift);
-
-            int total = summary.get("TOTAL");
-            int critical = summary.get("CRITICAL");
-            int high = summary.get("HIGH");
-            int normal = summary.get("NORMAL");
-
-            String ctx = request.getContextPath();
-
-            if (total <= 0) {
-                response.getWriter().write(
-                        "<div class='shift-task-mini ok'>" +
-                            "<div class='shift-task-left'>" +
-                                "<div class='shift-task-icon'>✅</div>" +
-                                "<div>" +
-                                    "<div class='shift-task-title'>No Pending Shift Tasks</div>" +
-                                    "<div class='shift-task-sub'>Current shift: " + currentShift + "</div>" +
-                                "</div>" +
-                            "</div>" +
-                        "</div>"
-                );
-                return;
-            }
-
-            response.getWriter().write(
-                    "<div class='shift-task-mini alert'>" +
-                        "<div class='shift-task-left'>" +
-                            "<div class='shift-task-icon'>📌</div>" +
-                            "<div>" +
-                                "<div class='shift-task-title'>Current Shift Tasks: " + total + "</div>" +
-                                "<div class='shift-task-sub'>" +
-                                    "Shift: " + currentShift +
-                                    " | Critical: " + critical +
-                                    " | High: " + high +
-                                    " | Normal: " + normal +
-                                "</div>" +
-                            "</div>" +
-                        "</div>" +
-                        "<a class='shift-task-open' href='" + ctx + "/taskmanager?status=OPEN&assignedTo=UNASSIGNED&shift=CURRENT'>Open</a>" +
-                    "</div>"
-            );
+            request.setAttribute("users", users);
+            request.getRequestDispatcher("/usermanagement.jsp").forward(request, response);
 
         } catch (Exception e) {
             e.printStackTrace();
 
-            response.getWriter().write(
-                    "<div class='shift-task-mini error-mini'>" +
-                        "<div class='shift-task-left'>" +
-                            "<div class='shift-task-icon'>⚠️</div>" +
-                            "<div>" +
-                                "<div class='shift-task-title'>Shift task summary failed</div>" +
-                                "<div class='shift-task-sub'>" + safe(e.getMessage()) + "</div>" +
-                            "</div>" +
-                        "</div>" +
-                    "</div>"
-            );
+            request.setAttribute("errorMsg", e.getMessage());
+            request.getRequestDispatcher("/usermanagement.jsp").forward(request, response);
         }
     }
 
-    private String safe(String value) {
-        if (value == null) {
-            return "";
+    @Override
+    protected void doPost(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+
+        if (!isAdmin(request)) {
+            response.sendRedirect(request.getContextPath() + "/refreshstats");
+            return;
         }
 
-        return value
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;");
+        String action = request.getParameter("action");
+
+        try {
+            if ("create".equalsIgnoreCase(action)) {
+
+                String username = request.getParameter("username");
+                String password = request.getParameter("password");
+                String role = request.getParameter("role");
+                String displayName = request.getParameter("displayName");
+
+                service.createUser(username, password, role, displayName);
+
+            } else if ("resetPassword".equalsIgnoreCase(action)) {
+
+                long id = Long.parseLong(request.getParameter("id"));
+                String newPassword = request.getParameter("newPassword");
+
+                service.resetPassword(id, newPassword);
+
+            } else if ("updateRole".equalsIgnoreCase(action)) {
+
+                long id = Long.parseLong(request.getParameter("id"));
+                String role = request.getParameter("role");
+
+                service.updateRole(id, role);
+
+            } else if ("updateDisplayName".equalsIgnoreCase(action)) {
+
+                long id = Long.parseLong(request.getParameter("id"));
+                String displayName = request.getParameter("displayName");
+
+                service.updateDisplayName(id, displayName);
+
+            } else if ("activate".equalsIgnoreCase(action)) {
+
+                long id = Long.parseLong(request.getParameter("id"));
+                service.setActive(id, "Y");
+
+            } else if ("deactivate".equalsIgnoreCase(action)) {
+
+                long id = Long.parseLong(request.getParameter("id"));
+
+                if (isTryingToDeactivateSelf(request, id)) {
+                    response.sendRedirect(request.getContextPath() + "/usermanagement?error=selfDeactivate");
+                    return;
+                }
+
+                service.setActive(id, "N");
+            }
+
+            response.sendRedirect(request.getContextPath() + "/usermanagement?saved=1");
+
+        } catch (Exception e) {
+            e.printStackTrace();
+
+            request.setAttribute("errorMsg", e.getMessage());
+
+            try {
+                request.setAttribute("users", service.getAllUsers());
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
+
+            request.getRequestDispatcher("/usermanagement.jsp").forward(request, response);
+        }
+    }
+
+    private boolean isAdmin(HttpServletRequest request) {
+
+        HttpSession session = request.getSession(false);
+
+        if (session == null) {
+            return false;
+        }
+
+        Object roleObj = session.getAttribute("loggedRole");
+
+        if (roleObj == null) {
+            return false;
+        }
+
+        String role = String.valueOf(roleObj);
+
+        return "ADMIN".equalsIgnoreCase(role) || "TEAM_LEAD".equalsIgnoreCase(role);
+    }
+
+    private boolean isTryingToDeactivateSelf(HttpServletRequest request, long id) {
+
+        HttpSession session = request.getSession(false);
+
+        if (session == null) {
+            return false;
+        }
+
+        Object loggedUserIdObj = session.getAttribute("loggedUserId");
+
+        if (loggedUserIdObj == null) {
+            return false;
+        }
+
+        try {
+            long loggedUserId = Long.parseLong(String.valueOf(loggedUserIdObj));
+            return loggedUserId == id;
+
+        } catch (Exception e) {
+            return false;
+        }
     }
 }
