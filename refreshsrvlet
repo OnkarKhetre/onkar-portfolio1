@@ -1,10 +1,16 @@
 package com.dba.controller;
 
 import java.io.IOException;
+import java.sql.Connection;
+import java.util.ArrayList;
 import java.util.List;
 
-import com.dba.models.AdminUser;
-import com.dba.service.UserAdminService;
+import com.dba.config.DatabaseRegistry;
+import com.dba.connection.databaseconnection;
+import com.dba.models.BlockingSessionInfo;
+import com.dba.models.LongOperationInfo;
+import com.dba.models.LongRunningSessionInfo;
+import com.dba.service.SessionMonitorService;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.WebServlet;
@@ -13,112 +19,95 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 
-@WebServlet("/usermanagement")
-public class UserAdminServlet extends HttpServlet {
+@WebServlet("/sessionmonitor")
+public class SessionMonitorServlet extends HttpServlet {
     private static final long serialVersionUID = 1L;
 
-    private UserAdminService service = new UserAdminService();
+    private SessionMonitorService service = new SessionMonitorService();
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
 
-        if (!isAdmin(request)) {
-            response.sendRedirect(request.getContextPath() + "/refreshstats");
+        if (!isLoggedIn(request)) {
+            response.sendRedirect(request.getContextPath() + "/login.jsp");
             return;
         }
 
-        try {
-            List<AdminUser> users = service.getAllUsers();
+        String site = request.getParameter("site");
+        String target = request.getParameter("target");
+        String run = request.getParameter("run");
 
-            request.setAttribute("users", users);
-            request.getRequestDispatcher("/usermanagement.jsp").forward(request, response);
+        int minMinutes = parseInt(request.getParameter("minMinutes"), 15);
 
-        } catch (Exception e) {
-            e.printStackTrace();
+        List<BlockingSessionInfo> blockingSessions = new ArrayList<BlockingSessionInfo>();
+        List<LongRunningSessionInfo> longRunningSessions = new ArrayList<LongRunningSessionInfo>();
+        List<LongOperationInfo> longOperations = new ArrayList<LongOperationInfo>();
 
-            request.setAttribute("errorMsg", e.getMessage());
-            request.getRequestDispatcher("/usermanagement.jsp").forward(request, response);
-        }
-    }
-
-    @Override
-    protected void doPost(HttpServletRequest request, HttpServletResponse response)
-            throws ServletException, IOException {
-
-        if (!isAdmin(request)) {
-            response.sendRedirect(request.getContextPath() + "/refreshstats");
-            return;
-        }
-
-        String action = request.getParameter("action");
+        Connection conn = null;
 
         try {
-            if ("create".equalsIgnoreCase(action)) {
+            if ("Y".equalsIgnoreCase(run)) {
 
-                String username = request.getParameter("username");
-                String password = request.getParameter("password");
-                String role = request.getParameter("role");
-                String displayName = request.getParameter("displayName");
-
-                service.createUser(username, password, role, displayName);
-
-            } else if ("resetPassword".equalsIgnoreCase(action)) {
-
-                long id = Long.parseLong(request.getParameter("id"));
-                String newPassword = request.getParameter("newPassword");
-
-                service.resetPassword(id, newPassword);
-
-            } else if ("updateRole".equalsIgnoreCase(action)) {
-
-                long id = Long.parseLong(request.getParameter("id"));
-                String role = request.getParameter("role");
-
-                service.updateRole(id, role);
-
-            } else if ("updateDisplayName".equalsIgnoreCase(action)) {
-
-                long id = Long.parseLong(request.getParameter("id"));
-                String displayName = request.getParameter("displayName");
-
-                service.updateDisplayName(id, displayName);
-
-            } else if ("activate".equalsIgnoreCase(action)) {
-
-                long id = Long.parseLong(request.getParameter("id"));
-                service.setActive(id, "Y");
-
-            } else if ("deactivate".equalsIgnoreCase(action)) {
-
-                long id = Long.parseLong(request.getParameter("id"));
-
-                if (isTryingToDeactivateSelf(request, id)) {
-                    response.sendRedirect(request.getContextPath() + "/usermanagement?error=selfDeactivate");
-                    return;
+                if (site == null || site.trim().equals("")
+                        || target == null || target.trim().equals("")) {
+                    throw new Exception("Please select database.");
                 }
 
-                service.setActive(id, "N");
+                conn = databaseconnection.getconnection(site, target);
+
+                if (conn == null) {
+                    throw new Exception("Could not connect to selected database.");
+                }
+
+                blockingSessions = service.getBlockingSessions(conn);
+                longRunningSessions = service.getLongRunningSessions(conn, minMinutes);
+                longOperations = service.getLongOperations(conn);
             }
 
-            response.sendRedirect(request.getContextPath() + "/usermanagement?saved=1");
+            request.setAttribute("blockingSessions", blockingSessions);
+            request.setAttribute("longRunningSessions", longRunningSessions);
+            request.setAttribute("longOperations", longOperations);
+
+            request.setAttribute("site", site);
+            request.setAttribute("target", target);
+            request.setAttribute("minMinutes", minMinutes);
+            request.setAttribute("run", run);
+
+            request.setAttribute("dbList", DatabaseRegistry.ALL_DATABASES);
+
+            request.getRequestDispatcher("/sessionmonitor.jsp").forward(request, response);
 
         } catch (Exception e) {
             e.printStackTrace();
 
             request.setAttribute("errorMsg", e.getMessage());
 
-            try {
-                request.setAttribute("users", service.getAllUsers());
-            } catch (Exception ex) {
-                ex.printStackTrace();
+            request.setAttribute("blockingSessions", blockingSessions);
+            request.setAttribute("longRunningSessions", longRunningSessions);
+            request.setAttribute("longOperations", longOperations);
+
+            request.setAttribute("site", site);
+            request.setAttribute("target", target);
+            request.setAttribute("minMinutes", minMinutes);
+            request.setAttribute("run", run);
+
+            request.setAttribute("dbList", DatabaseRegistry.ALL_DATABASES);
+
+            request.getRequestDispatcher("/sessionmonitor.jsp").forward(request, response);
+
+        } finally {
+            if (conn != null) {
+                try {
+                    databaseconnection.closeconnection(conn);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
             }
-
-            request.getRequestDispatcher("/usermanagement.jsp").forward(request, response);
         }
     }
 
-    private boolean isAdmin(HttpServletRequest request) {
+    private boolean isLoggedIn(HttpServletRequest request) {
 
         HttpSession session = request.getSession(false);
 
@@ -126,37 +115,20 @@ public class UserAdminServlet extends HttpServlet {
             return false;
         }
 
-        Object roleObj = session.getAttribute("loggedRole");
-
-        if (roleObj == null) {
-            return false;
-        }
-
-        String role = String.valueOf(roleObj);
-
-        return "ADMIN".equalsIgnoreCase(role) || "TEAM_LEAD".equalsIgnoreCase(role);
+        return session.getAttribute("loggedUser") != null;
     }
 
-    private boolean isTryingToDeactivateSelf(HttpServletRequest request, long id) {
-
-        HttpSession session = request.getSession(false);
-
-        if (session == null) {
-            return false;
-        }
-
-        Object loggedUserIdObj = session.getAttribute("loggedUserId");
-
-        if (loggedUserIdObj == null) {
-            return false;
-        }
+    private int parseInt(String value, int defaultValue) {
 
         try {
-            long loggedUserId = Long.parseLong(String.valueOf(loggedUserIdObj));
-            return loggedUserId == id;
+            if (value == null || value.trim().equals("")) {
+                return defaultValue;
+            }
+
+            return Integer.parseInt(value);
 
         } catch (Exception e) {
-            return false;
+            return defaultValue;
         }
     }
 }
