@@ -1,18 +1,39 @@
 <%@ page import="java.util.*" %>
-<%@ page import="com.dba.models.AdminUser" %>
+<%@ page import="com.dba.models.BlockingSessionInfo" %>
+<%@ page import="com.dba.models.LongRunningSessionInfo" %>
+<%@ page import="com.dba.models.LongOperationInfo" %>
 <%@ page contentType="text/html;charset=UTF-8" language="java" %>
 
 <%
-    List<AdminUser> users = (List<AdminUser>) request.getAttribute("users");
-    String errorMsg = (String) request.getAttribute("errorMsg");
-    String saved = request.getParameter("saved");
-    String error = request.getParameter("error");
+    List<BlockingSessionInfo> blockingSessions =
+            (List<BlockingSessionInfo>) request.getAttribute("blockingSessions");
 
-    if (users == null) {
-        users = new ArrayList<AdminUser>();
-    }
+    List<LongRunningSessionInfo> longRunningSessions =
+            (List<LongRunningSessionInfo>) request.getAttribute("longRunningSessions");
+
+    List<LongOperationInfo> longOperations =
+            (List<LongOperationInfo>) request.getAttribute("longOperations");
+
+    String site = (String) request.getAttribute("site");
+    String target = (String) request.getAttribute("target");
+    String run = (String) request.getAttribute("run");
+    String errorMsg = (String) request.getAttribute("errorMsg");
+
+    Integer minMinutesObj = (Integer) request.getAttribute("minMinutes");
+    int minMinutes = minMinutesObj == null ? 15 : minMinutesObj.intValue();
+
+    String[][] dbList = (String[][]) request.getAttribute("dbList");
+
+    if (blockingSessions == null) blockingSessions = new ArrayList<BlockingSessionInfo>();
+    if (longRunningSessions == null) longRunningSessions = new ArrayList<LongRunningSessionInfo>();
+    if (longOperations == null) longOperations = new ArrayList<LongOperationInfo>();
 
     String ctx = request.getContextPath();
+
+    String selectedDb = "";
+    if (site != null && target != null) {
+        selectedDb = site + "|" + target;
+    }
 %>
 
 <%!
@@ -28,28 +49,32 @@
     }
 
     public String selected(String actual, String expected) {
-        if (actual == null) return "";
+        if (actual == null) actual = "";
+        if (expected == null) expected = "";
         return actual.equalsIgnoreCase(expected) ? "selected" : "";
     }
 
-    public String activeText(String active) {
-        if ("Y".equalsIgnoreCase(active)) {
-            return "Active";
+    public String formatSeconds(long seconds) {
+        if (seconds < 0) seconds = 0;
+
+        long hrs = seconds / 3600;
+        long mins = (seconds % 3600) / 60;
+        long secs = seconds % 60;
+
+        if (hrs > 0) {
+            return hrs + "h " + mins + "m " + secs + "s";
         }
-        return "Inactive";
+
+        if (mins > 0) {
+            return mins + "m " + secs + "s";
+        }
+
+        return secs + "s";
     }
 
-    public String activeClass(String active) {
-        if ("Y".equalsIgnoreCase(active)) {
-            return "badge-active";
-        }
-        return "badge-inactive";
-    }
-
-    public String roleClass(String role) {
-        if ("ADMIN".equalsIgnoreCase(role)) return "badge-admin";
-        if ("TEAM_LEAD".equalsIgnoreCase(role)) return "badge-lead";
-        return "badge-user";
+    public String percent(Object value) {
+        if (value == null) return "0%";
+        return String.valueOf(value) + "%";
     }
 %>
 
@@ -57,7 +82,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>User Management - DBA Monitor</title>
+<title>Session Monitor - DBA Monitor</title>
 
 <style>
 * {
@@ -110,10 +135,6 @@ h1 {
     border-radius: 12px;
 }
 
-.back-link:hover {
-    background: rgba(34,211,238,.20);
-}
-
 .card {
     background: rgba(15,23,42,.80);
     border: 1px solid rgba(148,163,184,.22);
@@ -128,14 +149,45 @@ h1 {
     font-size: 20px;
 }
 
-.notice {
-    background: rgba(34,197,94,.16);
-    border: 1px solid rgba(34,197,94,.35);
-    color: #bbf7d0;
-    padding: 12px;
-    border-radius: 13px;
-    margin-bottom: 14px;
-    font-weight: 800;
+.filter-row {
+    display: flex;
+    align-items: end;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+label {
+    display: block;
+    font-size: 12px;
+    color: #cbd5e1;
+    font-weight: 900;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+}
+
+select, input {
+    height: 40px;
+    border: 1px solid rgba(148,163,184,.30);
+    background: rgba(2,6,23,.58);
+    color: #e5eefb;
+    border-radius: 11px;
+    padding: 0 10px;
+    outline: none;
+}
+
+button {
+    height: 40px;
+    border: none;
+    border-radius: 11px;
+    background: #22d3ee;
+    color: #06202a;
+    font-weight: 900;
+    padding: 0 16px;
+    cursor: pointer;
+}
+
+button:hover {
+    filter: brightness(1.08);
 }
 
 .error {
@@ -148,74 +200,32 @@ h1 {
     font-weight: 800;
 }
 
-.form-grid {
+.summary-grid {
     display: grid;
-    grid-template-columns: 1.1fr 1.1fr 1fr 1.1fr auto;
-    gap: 12px;
-    align-items: end;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin-bottom: 18px;
 }
 
-label {
-    display: block;
-    font-size: 12px;
-    color: #cbd5e1;
+.summary-card {
+    background: rgba(15,23,42,.80);
+    border: 1px solid rgba(148,163,184,.22);
+    border-radius: 18px;
+    padding: 16px;
+    box-shadow: 0 18px 50px rgba(0,0,0,.22);
+}
+
+.summary-label {
+    color: #94a3b8;
+    font-size: 13px;
     font-weight: 900;
     text-transform: uppercase;
-    margin-bottom: 6px;
 }
 
-input, select {
-    width: 100%;
-    height: 40px;
-    border: 1px solid rgba(148,163,184,.30);
-    background: rgba(2,6,23,.58);
-    color: #e5eefb;
-    border-radius: 11px;
-    padding: 0 10px;
-    outline: none;
-}
-
-input::placeholder {
-    color: #64748b;
-}
-
-button {
-    height: 40px;
-    border: none;
-    border-radius: 11px;
-    background: #22d3ee;
-    color: #06202a;
+.summary-value {
+    font-size: 32px;
     font-weight: 900;
-    padding: 0 16px;
-    cursor: pointer;
-    white-space: nowrap;
-}
-
-button:hover {
-    filter: brightness(1.08);
-}
-
-.btn-small {
-    height: 32px;
-    padding: 0 10px;
-    border-radius: 9px;
-    font-size: 12px;
-}
-
-.btn-secondary {
-    background: rgba(148,163,184,.16);
-    color: #e5eefb;
-    border: 1px solid rgba(148,163,184,.25);
-}
-
-.btn-danger {
-    background: #ef4444;
-    color: white;
-}
-
-.btn-success {
-    background: #22c55e;
-    color: #052e16;
+    margin-top: 7px;
 }
 
 .table-wrap {
@@ -226,16 +236,16 @@ button:hover {
 
 table {
     width: 100%;
-    min-width: 1050px;
+    min-width: 1300px;
     border-collapse: collapse;
 }
 
 th, td {
     border-bottom: 1px solid rgba(148,163,184,.16);
-    padding: 12px;
+    padding: 11px;
     text-align: left;
     vertical-align: top;
-    font-size: 14px;
+    font-size: 13px;
 }
 
 th {
@@ -244,114 +254,100 @@ th {
     text-transform: uppercase;
     font-size: 12px;
     font-weight: 900;
-}
-
-.user-main {
-    font-weight: 900;
-    color: #f8fafc;
-}
-
-.user-sub {
-    margin-top: 4px;
-    color: #94a3b8;
-    font-size: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 2;
 }
 
 .badge {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 6px 10px;
+    padding: 5px 9px;
     border-radius: 999px;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 900;
+    white-space: nowrap;
 }
 
-.badge-active {
-    background: rgba(34,197,94,.16);
-    color: #86efac;
-}
-
-.badge-inactive {
+.badge-critical {
     background: rgba(239,68,68,.18);
     color: #fecaca;
 }
 
-.badge-admin {
-    background: rgba(168,85,247,.20);
-    color: #e9d5ff;
+.badge-warning {
+    background: rgba(245,158,11,.18);
+    color: #fbbf24;
 }
 
-.badge-lead {
-    background: rgba(59,130,246,.20);
-    color: #bfdbfe;
+.badge-good {
+    background: rgba(34,197,94,.16);
+    color: #86efac;
 }
 
-.badge-user {
-    background: rgba(34,211,238,.16);
-    color: #a5f3fc;
+.badge-normal {
+    background: rgba(148,163,184,.18);
+    color: #cbd5e1;
 }
 
-.inline-form {
-    display: flex;
-    gap: 7px;
-    align-items: center;
-    margin: 0;
+.sql-box {
+    font-family: Consolas, monospace;
+    background: rgba(2,6,23,.72);
+    border: 1px solid rgba(148,163,184,.22);
+    border-radius: 10px;
+    padding: 8px;
+    color: #fde68a;
+    max-width: 360px;
+    white-space: normal;
+    word-break: break-word;
 }
 
-.inline-form input {
-    width: 145px;
-    height: 32px;
-    border-radius: 9px;
+.copy-btn {
+    height: 30px;
+    padding: 0 9px;
+    border-radius: 8px;
     font-size: 12px;
-}
-
-.inline-form select {
-    width: 120px;
-    height: 32px;
-    border-radius: 9px;
-    font-size: 12px;
-}
-
-.action-stack {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+    margin-top: 6px;
+    background: rgba(34,211,238,.18);
+    color: #67e8f9;
+    border: 1px solid rgba(34,211,238,.25);
 }
 
 .empty {
-    padding: 26px;
+    padding: 24px;
     text-align: center;
     color: #94a3b8;
     border: 1px dashed rgba(148,163,184,.30);
     border-radius: 16px;
 }
 
-.info-note {
+.note {
     color: #94a3b8;
     font-size: 13px;
     margin-top: 10px;
     line-height: 1.5;
 }
 
-@media(max-width: 1100px) {
-    .form-grid {
-        grid-template-columns: 1fr 1fr;
-    }
+.section-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
 }
 
-@media(max-width: 750px) {
+@media(max-width: 900px) {
     .topbar {
         align-items: flex-start;
         flex-direction: column;
     }
 
-    .page {
-        padding: 16px;
+    .summary-grid {
+        grid-template-columns: 1fr;
     }
 
-    .form-grid {
-        grid-template-columns: 1fr;
+    .page {
+        padding: 16px;
     }
 }
 </style>
@@ -363,212 +359,275 @@ th {
 
     <div class="topbar">
         <div>
-            <h1>User Management</h1>
+            <h1>Session Monitor</h1>
             <div class="subtitle">
-                Admin panel to create users, reset passwords, change roles, and activate/deactivate access.
+                RAC-aware DBA tool using GV$SESSION and GV$SESSION_LONGOPS.
             </div>
         </div>
 
-        <a class="back-link" href="<%= ctx %>/refreshstats">← Back to Dashboard</a>
+        <a class="back-link" href="<%= ctx %>/dashboard">← Back to Dashboard</a>
     </div>
-
-    <% if ("1".equals(saved)) { %>
-        <div class="notice">User changes saved successfully.</div>
-    <% } %>
-
-    <% if ("selfDeactivate".equals(error)) { %>
-        <div class="error">You cannot deactivate your own currently logged-in account.</div>
-    <% } %>
 
     <% if (errorMsg != null) { %>
         <div class="error"><%= esc(errorMsg) %></div>
     <% } %>
 
     <div class="card">
-        <h2>Create New User</h2>
+        <form method="get" action="<%= ctx %>/sessionmonitor" class="filter-row" onsubmit="return prepareDbSelection();">
+            <input type="hidden" name="run" value="Y">
+            <input type="hidden" name="site" id="siteInput" value="<%= esc(site) %>">
+            <input type="hidden" name="target" id="targetInput" value="<%= esc(target) %>">
 
-        <form method="post" action="<%= ctx %>/usermanagement" onsubmit="return validateCreateUser(this);">
-            <input type="hidden" name="action" value="create">
+            <div>
+                <label>Database</label>
+                <select id="dbSelect" required>
+                    <option value="">Select Database</option>
 
-            <div class="form-grid">
-                <div>
-                    <label>Username</label>
-                    <input type="text" name="username" placeholder="Example: v1022483" required>
-                </div>
-
-                <div>
-                    <label>Password</label>
-                    <input type="password" name="password" placeholder="Temporary password" required>
-                </div>
-
-                <div>
-                    <label>Role</label>
-                    <select name="role" required>
-                        <option value="USER">USER</option>
-                        <option value="TEAM_LEAD">TEAM_LEAD</option>
-                        <option value="ADMIN">ADMIN</option>
-                    </select>
-                </div>
-
-                <div>
-                    <label>Display Name</label>
-                    <input type="text" name="displayName" placeholder="Optional name">
-                </div>
-
-                <div>
-                    <button type="submit">Create User</button>
-                </div>
+                    <% if (dbList != null) {
+                        for (int i = 0; i < dbList.length; i++) {
+                            String dbSite = dbList[i][0];
+                            String dbTarget = dbList[i][1];
+                            String dbValue = dbSite + "|" + dbTarget;
+                    %>
+                        <option value="<%= esc(dbValue) %>" <%= selected(selectedDb, dbValue) %>>
+                            <%= esc(dbSite) %>-<%= esc(dbTarget) %>
+                        </option>
+                    <%  }
+                    } %>
+                </select>
             </div>
 
-            <div class="info-note">
-                Usernames are used internally for login, task assignment, roster, monitoring audit and reports.
-                Do not delete users; deactivate them if access should be removed.
+            <div>
+                <label>Long Running Min</label>
+                <input type="number" name="minMinutes" value="<%= minMinutes %>" min="1" max="999">
             </div>
+
+            <button type="submit">Check Sessions</button>
         </form>
+
+        <div class="note">
+            This page only generates kill commands. It does not execute any kill session command.
+        </div>
     </div>
 
-    <div class="card">
-        <h2>Existing Users</h2>
+    <% if ("Y".equalsIgnoreCase(run)) { %>
 
-        <% if (users.isEmpty()) { %>
-
-            <div class="empty">No users found.</div>
-
-        <% } else { %>
-
-            <div class="table-wrap">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>User</th>
-                            <th>Role</th>
-                            <th>Status</th>
-                            <th>Created At</th>
-                            <th>Update Display Name</th>
-                            <th>Change Role</th>
-                            <th>Reset Password</th>
-                            <th>Access</th>
-                        </tr>
-                    </thead>
-
-                    <tbody>
-                    <% for (AdminUser u : users) { %>
-                        <tr>
-                            <td>
-                                <div class="user-main"><%= esc(u.getUsername()) %></div>
-                                <div class="user-sub">
-                                    Display: <%= esc(u.getDisplayName()) %>
-                                </div>
-                            </td>
-
-                            <td>
-                                <span class="badge <%= roleClass(u.getRole()) %>">
-                                    <%= esc(u.getRole()) %>
-                                </span>
-                            </td>
-
-                            <td>
-                                <span class="badge <%= activeClass(u.getActive()) %>">
-                                    <%= activeText(u.getActive()) %>
-                                </span>
-                            </td>
-
-                            <td>
-                                <%= esc(u.getCreatedAt()) %>
-                            </td>
-
-                            <td>
-                                <form method="post" action="<%= ctx %>/usermanagement" class="inline-form">
-                                    <input type="hidden" name="action" value="updateDisplayName">
-                                    <input type="hidden" name="id" value="<%= u.getId() %>">
-                                    <input type="text" name="displayName" value="<%= esc(u.getDisplayName()) %>" placeholder="Display name">
-                                    <button class="btn-small btn-secondary" type="submit">Save</button>
-                                </form>
-                            </td>
-
-                            <td>
-                                <form method="post" action="<%= ctx %>/usermanagement" class="inline-form">
-                                    <input type="hidden" name="action" value="updateRole">
-                                    <input type="hidden" name="id" value="<%= u.getId() %>">
-
-                                    <select name="role">
-                                        <option value="USER" <%= selected(u.getRole(), "USER") %>>USER</option>
-                                        <option value="TEAM_LEAD" <%= selected(u.getRole(), "TEAM_LEAD") %>>TEAM_LEAD</option>
-                                        <option value="ADMIN" <%= selected(u.getRole(), "ADMIN") %>>ADMIN</option>
-                                    </select>
-
-                                    <button class="btn-small btn-secondary" type="submit">Update</button>
-                                </form>
-                            </td>
-
-                            <td>
-                                <form method="post" action="<%= ctx %>/usermanagement" class="inline-form"
-                                      onsubmit="return validateResetPassword(this);">
-                                    <input type="hidden" name="action" value="resetPassword">
-                                    <input type="hidden" name="id" value="<%= u.getId() %>">
-                                    <input type="password" name="newPassword" placeholder="New password">
-                                    <button class="btn-small btn-secondary" type="submit">Reset</button>
-                                </form>
-                            </td>
-
-                            <td>
-                                <div class="action-stack">
-                                    <% if ("Y".equalsIgnoreCase(u.getActive())) { %>
-                                        <form method="post" action="<%= ctx %>/usermanagement" style="margin:0;"
-                                              onsubmit="return confirm('Deactivate user <%= esc(u.getUsername()) %>?');">
-                                            <input type="hidden" name="action" value="deactivate">
-                                            <input type="hidden" name="id" value="<%= u.getId() %>">
-                                            <button class="btn-small btn-danger" type="submit">Deactivate</button>
-                                        </form>
-                                    <% } else { %>
-                                        <form method="post" action="<%= ctx %>/usermanagement" style="margin:0;">
-                                            <input type="hidden" name="action" value="activate">
-                                            <input type="hidden" name="id" value="<%= u.getId() %>">
-                                            <button class="btn-small btn-success" type="submit">Activate</button>
-                                        </form>
-                                    <% } %>
-                                </div>
-                            </td>
-                        </tr>
-                    <% } %>
-                    </tbody>
-                </table>
+        <div class="summary-grid">
+            <div class="summary-card">
+                <div class="summary-label">Blocking Sessions</div>
+                <div class="summary-value" style="color:<%= blockingSessions.size() > 0 ? "#fecaca" : "#86efac" %>;">
+                    <%= blockingSessions.size() %>
+                </div>
             </div>
 
-        <% } %>
-    </div>
+            <div class="summary-card">
+                <div class="summary-label">Long Running Active</div>
+                <div class="summary-value" style="color:<%= longRunningSessions.size() > 0 ? "#fbbf24" : "#86efac" %>;">
+                    <%= longRunningSessions.size() %>
+                </div>
+            </div>
 
-</div>
+            <div class="summary-card">
+                <div class="summary-label">Long Operations</div>
+                <div class="summary-value" style="color:<%= longOperations.size() > 0 ? "#67e8f9" : "#86efac" %>;">
+                    <%= longOperations.size() %>
+                </div>
+            </div>
+        </div>
 
-<script>
-function validateCreateUser(form) {
-    var username = form.username.value.trim();
-    var password = form.password.value.trim();
+        <div class="card">
+            <div class="section-title-row">
+                <h2>Blocking Sessions</h2>
+                <span class="badge <%= blockingSessions.size() > 0 ? "badge-critical" : "badge-good" %>">
+                    <%= blockingSessions.size() > 0 ? "Action Required" : "No Blocking Found" %>
+                </span>
+            </div>
 
-    if (username.length < 3) {
-        alert("Username should be at least 3 characters.");
-        return false;
-    }
+            <% if (blockingSessions.isEmpty()) { %>
 
-    if (password.length < 4) {
-        alert("Password should be at least 4 characters.");
-        return false;
-    }
+                <div class="empty">No blocking sessions found.</div>
 
-    return true;
-}
+            <% } else { %>
 
-function validateResetPassword(form) {
-    var password = form.newPassword.value.trim();
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Blocked</th>
+                                <th>Blocker</th>
+                                <th>User</th>
+                                <th>Machine</th>
+                                <th>Program / Module</th>
+                                <th>Status</th>
+                                <th>Wait Event</th>
+                                <th>Wait Class</th>
+                                <th>Waiting</th>
+                                <th>SQL ID</th>
+                                <th>Kill Blocker Command</th>
+                            </tr>
+                        </thead>
 
-    if (password.length < 4) {
-        alert("New password should be at least 4 characters.");
-        return false;
-    }
+                        <tbody>
+                        <% for (BlockingSessionInfo b : blockingSessions) { %>
+                            <tr>
+                                <td>
+                                    <span class="badge badge-warning">Inst <%= esc(b.getBlockedInstId()) %></span><br>
+                                    SID: <b><%= esc(b.getBlockedSid()) %></b><br>
+                                    Serial: <%= esc(b.getBlockedSerial()) %>
+                                </td>
 
-    return confirm("Reset password for this user?");
-}
-</script>
+                                <td>
+                                    <span class="badge badge-critical">Inst <%= esc(b.getBlockerInstId()) %></span><br>
+                                    SID: <b><%= esc(b.getBlockerSid()) %></b><br>
+                                    Serial: <%= esc(b.getBlockerSerial()) %>
+                                </td>
 
-</body>
-</html>
+                                <td><%= esc(b.getUsername()) %></td>
+                                <td><%= esc(b.getMachine()) %></td>
+                                <td>
+                                    <b><%= esc(b.getProgram()) %></b><br>
+                                    <span style="color:#94a3b8;"><%= esc(b.getModule()) %></span>
+                                </td>
+                                <td><span class="badge badge-normal"><%= esc(b.getStatus()) %></span></td>
+                                <td><%= esc(b.getEvent()) %></td>
+                                <td><%= esc(b.getWaitClass()) %></td>
+                                <td><%= formatSeconds(b.getSecondsInWait()) %></td>
+                                <td><%= esc(b.getSqlId()) %></td>
+                                <td>
+                                    <div class="sql-box" id="kill_block_<%= esc(b.getBlockedInstId()) %>_<%= esc(b.getBlockedSid()) %>">
+                                        <%= esc(b.getKillCommand()) %>
+                                    </div>
+                                    <button class="copy-btn" type="button"
+                                            onclick="copyText('kill_block_<%= esc(b.getBlockedInstId()) %>_<%= esc(b.getBlockedSid()) %>')">
+                                        Copy
+                                    </button>
+                                </td>
+                            </tr>
+                        <% } %>
+                        </tbody>
+                    </table>
+                </div>
+
+            <% } %>
+        </div>
+
+        <div class="card">
+            <div class="section-title-row">
+                <h2>Long Running Active Sessions</h2>
+                <span class="badge <%= longRunningSessions.size() > 0 ? "badge-warning" : "badge-good" %>">
+                    Threshold: <%= minMinutes %> min
+                </span>
+            </div>
+
+            <% if (longRunningSessions.isEmpty()) { %>
+
+                <div class="empty">No active session running longer than <%= minMinutes %> minutes.</div>
+
+            <% } else { %>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Instance</th>
+                                <th>SID / Serial</th>
+                                <th>User</th>
+                                <th>Status</th>
+                                <th>Machine</th>
+                                <th>Program / Module</th>
+                                <th>Wait Event</th>
+                                <th>Wait Class</th>
+                                <th>Running Time</th>
+                                <th>Logon Time</th>
+                                <th>SQL ID</th>
+                                <th>Kill Command</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                        <% for (LongRunningSessionInfo l : longRunningSessions) { %>
+                            <tr>
+                                <td><span class="badge badge-normal">Inst <%= esc(l.getInstId()) %></span></td>
+                                <td>
+                                    SID: <b><%= esc(l.getSid()) %></b><br>
+                                    Serial: <%= esc(l.getSerial()) %>
+                                </td>
+                                <td><%= esc(l.getUsername()) %></td>
+                                <td><span class="badge badge-warning"><%= esc(l.getStatus()) %></span></td>
+                                <td><%= esc(l.getMachine()) %></td>
+                                <td>
+                                    <b><%= esc(l.getProgram()) %></b><br>
+                                    <span style="color:#94a3b8;"><%= esc(l.getModule()) %></span>
+                                </td>
+                                <td><%= esc(l.getEvent()) %></td>
+                                <td><%= esc(l.getWaitClass()) %></td>
+                                <td><%= formatSeconds(l.getLastCallEt()) %></td>
+                                <td><%= esc(l.getLogonTime()) %></td>
+                                <td><%= esc(l.getSqlId()) %></td>
+                                <td>
+                                    <div class="sql-box" id="kill_long_<%= esc(l.getInstId()) %>_<%= esc(l.getSid()) %>">
+                                        <%= esc(l.getKillCommand()) %>
+                                    </div>
+                                    <button class="copy-btn" type="button"
+                                            onclick="copyText('kill_long_<%= esc(l.getInstId()) %>_<%= esc(l.getSid()) %>')">
+                                        Copy
+                                    </button>
+                                </td>
+                            </tr>
+                        <% } %>
+                        </tbody>
+                    </table>
+                </div>
+
+            <% } %>
+        </div>
+
+        <div class="card">
+            <div class="section-title-row">
+                <h2>Long Operations</h2>
+                <span class="badge <%= longOperations.size() > 0 ? "badge-normal" : "badge-good" %>">
+                    GV$SESSION_LONGOPS
+                </span>
+            </div>
+
+            <% if (longOperations.isEmpty()) { %>
+
+                <div class="empty">No active long operations found.</div>
+
+            <% } else { %>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Instance</th>
+                                <th>SID / Serial</th>
+                                <th>User</th>
+                                <th>Operation</th>
+                                <th>Target</th>
+                                <th>SQL ID</th>
+                                <th>Sofar</th>
+                                <th>Total Work</th>
+                                <th>Done</th>
+                                <th>Elapsed</th>
+                                <th>Remaining</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                        <% for (LongOperationInfo o : longOperations) { %>
+                            <tr>
+                                <td><span class="badge badge-normal">Inst <%= esc(o.getInstId()) %></span></td>
+                                <td>
+                                    SID: <b><%= esc(o.getSid()) %></b><br>
+                                    Serial: <%= esc(o.getSerial()) %>
+                                </td>
+                                <td><%= esc(o.getUsername()) %></td>
+                                <td><%= esc(o.getOpname()) %></td>
+                                <td><%= esc(o.getTarget()) %></td>
+                                <td><%= esc(o.getSqlId()) %></td>
+                                <td><%= o.getSofar() %></td>
+                                <td><%= o.getTotalwork() %></td>
+                                <td><span class="badge badge-good"><%= o.getPercentDone() %>%</span></td>
+                                <td><%= formatSeconds(o.getElapsedSeconds()) %></td>
+                                <td><%= form
