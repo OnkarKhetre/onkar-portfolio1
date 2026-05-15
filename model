@@ -1,74 +1,50 @@
 package com.dba.models;
 
-public class BlockingSessionInfo {
+import java.sql.Timestamp;
 
-    private String blockerInstId;
-    private String blockerSid;
-    private String blockerSerial;
+public class LongRunningSessionInfo {
 
-    private String blockedInstId;
-    private String blockedSid;
-    private String blockedSerial;
+    private String instId;
+    private String sid;
+    private String serial;
 
     private String username;
+    private String status;
     private String machine;
     private String program;
     private String module;
 
-    private String status;
     private String event;
     private String waitClass;
-    private long secondsInWait;
-
     private String sqlId;
+
+    private long lastCallEt;
+    private Timestamp logonTime;
+
     private String killCommand;
 
-    public String getBlockerInstId() {
-        return blockerInstId;
+    public String getInstId() {
+        return instId;
     }
 
-    public void setBlockerInstId(String blockerInstId) {
-        this.blockerInstId = blockerInstId;
+    public void setInstId(String instId) {
+        this.instId = instId;
     }
 
-    public String getBlockerSid() {
-        return blockerSid;
+    public String getSid() {
+        return sid;
     }
 
-    public void setBlockerSid(String blockerSid) {
-        this.blockerSid = blockerSid;
+    public void setSid(String sid) {
+        this.sid = sid;
     }
 
-    public String getBlockerSerial() {
-        return blockerSerial;
+    public String getSerial() {
+        return serial;
     }
 
-    public void setBlockerSerial(String blockerSerial) {
-        this.blockerSerial = blockerSerial;
-    }
-
-    public String getBlockedInstId() {
-        return blockedInstId;
-    }
-
-    public void setBlockedInstId(String blockedInstId) {
-        this.blockedInstId = blockedInstId;
-    }
-
-    public String getBlockedSid() {
-        return blockedSid;
-    }
-
-    public void setBlockedSid(String blockedSid) {
-        this.blockedSid = blockedSid;
-    }
-
-    public String getBlockedSerial() {
-        return blockedSerial;
-    }
-
-    public void setBlockedSerial(String blockedSerial) {
-        this.blockedSerial = blockedSerial;
+    public void setSerial(String serial) {
+        this.serial = serial;
     }
 
     public String getUsername() {
@@ -77,6 +53,14 @@ public class BlockingSessionInfo {
 
     public void setUsername(String username) {
         this.username = username;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
     }
 
     public String getMachine() {
@@ -103,14 +87,6 @@ public class BlockingSessionInfo {
         this.module = module;
     }
 
-    public String getStatus() {
-        return status;
-    }
-
-    public void setStatus(String status) {
-        this.status = status;
-    }
-
     public String getEvent() {
         return event;
     }
@@ -127,20 +103,28 @@ public class BlockingSessionInfo {
         this.waitClass = waitClass;
     }
 
-    public long getSecondsInWait() {
-        return secondsInWait;
-    }
-
-    public void setSecondsInWait(long secondsInWait) {
-        this.secondsInWait = secondsInWait;
-    }
-
     public String getSqlId() {
         return sqlId;
     }
 
     public void setSqlId(String sqlId) {
         this.sqlId = sqlId;
+    }
+
+    public long getLastCallEt() {
+        return lastCallEt;
+    }
+
+    public void setLastCallEt(long lastCallEt) {
+        this.lastCallEt = lastCallEt;
+    }
+
+    public Timestamp getLogonTime() {
+        return logonTime;
+    }
+
+    public void setLogonTime(Timestamp logonTime) {
+        this.logonTime = logonTime;
     }
 
     public String getKillCommand() {
