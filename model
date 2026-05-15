@@ -1,0 +1,153 @@
+package com.dba.models;
+
+public class BlockingSessionInfo {
+
+    private String blockerInstId;
+    private String blockerSid;
+    private String blockerSerial;
+
+    private String blockedInstId;
+    private String blockedSid;
+    private String blockedSerial;
+
+    private String username;
+    private String machine;
+    private String program;
+    private String module;
+
+    private String status;
+    private String event;
+    private String waitClass;
+    private long secondsInWait;
+
+    private String sqlId;
+    private String killCommand;
+
+    public String getBlockerInstId() {
+        return blockerInstId;
+    }
+
+    public void setBlockerInstId(String blockerInstId) {
+        this.blockerInstId = blockerInstId;
+    }
+
+    public String getBlockerSid() {
+        return blockerSid;
+    }
+
+    public void setBlockerSid(String blockerSid) {
+        this.blockerSid = blockerSid;
+    }
+
+    public String getBlockerSerial() {
+        return blockerSerial;
+    }
+
+    public void setBlockerSerial(String blockerSerial) {
+        this.blockerSerial = blockerSerial;
+    }
+
+    public String getBlockedInstId() {
+        return blockedInstId;
+    }
+
+    public void setBlockedInstId(String blockedInstId) {
+        this.blockedInstId = blockedInstId;
+    }
+
+    public String getBlockedSid() {
+        return blockedSid;
+    }
+
+    public void setBlockedSid(String blockedSid) {
+        this.blockedSid = blockedSid;
+    }
+
+    public String getBlockedSerial() {
+        return blockedSerial;
+    }
+
+    public void setBlockedSerial(String blockedSerial) {
+        this.blockedSerial = blockedSerial;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    public String getMachine() {
+        return machine;
+    }
+
+    public void setMachine(String machine) {
+        this.machine = machine;
+    }
+
+    public String getProgram() {
+        return program;
+    }
+
+    public void setProgram(String program) {
+        this.program = program;
+    }
+
+    public String getModule() {
+        return module;
+    }
+
+    public void setModule(String module) {
+        this.module = module;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public String getEvent() {
+        return event;
+    }
+
+    public void setEvent(String event) {
+        this.event = event;
+    }
+
+    public String getWaitClass() {
+        return waitClass;
+    }
+
+    public void setWaitClass(String waitClass) {
+        this.waitClass = waitClass;
+    }
+
+    public long getSecondsInWait() {
+        return secondsInWait;
+    }
+
+    public void setSecondsInWait(long secondsInWait) {
+        this.secondsInWait = secondsInWait;
+    }
+
+    public String getSqlId() {
+        return sqlId;
+    }
+
+    public void setSqlId(String sqlId) {
+        this.sqlId = sqlId;
+    }
+
+    public String getKillCommand() {
+        return killCommand;
+    }
+
+    public void setKillCommand(String killCommand) {
+        this.killCommand = killCommand;
+    }
+}
