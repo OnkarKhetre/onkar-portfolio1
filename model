@@ -1,27 +1,22 @@
 package com.dba.models;
 
-import java.sql.Timestamp;
-
-public class LongRunningSessionInfo {
+public class LongOperationInfo {
 
     private String instId;
     private String sid;
     private String serial;
-
     private String username;
-    private String status;
-    private String machine;
-    private String program;
-    private String module;
 
-    private String event;
-    private String waitClass;
+    private String opname;
+    private String target;
     private String sqlId;
 
-    private long lastCallEt;
-    private Timestamp logonTime;
+    private long sofar;
+    private long totalwork;
+    private double percentDone;
 
-    private String killCommand;
+    private long elapsedSeconds;
+    private long timeRemainingSeconds;
 
     public String getInstId() {
         return instId;
@@ -55,52 +50,20 @@ public class LongRunningSessionInfo {
         this.username = username;
     }
 
-    public String getStatus() {
-        return status;
+    public String getOpname() {
+        return opname;
     }
 
-    public void setStatus(String status) {
-        this.status = status;
+    public void setOpname(String opname) {
+        this.opname = opname;
     }
 
-    public String getMachine() {
-        return machine;
+    public String getTarget() {
+        return target;
     }
 
-    public void setMachine(String machine) {
-        this.machine = machine;
-    }
-
-    public String getProgram() {
-        return program;
-    }
-
-    public void setProgram(String program) {
-        this.program = program;
-    }
-
-    public String getModule() {
-        return module;
-    }
-
-    public void setModule(String module) {
-        this.module = module;
-    }
-
-    public String getEvent() {
-        return event;
-    }
-
-    public void setEvent(String event) {
-        this.event = event;
-    }
-
-    public String getWaitClass() {
-        return waitClass;
-    }
-
-    public void setWaitClass(String waitClass) {
-        this.waitClass = waitClass;
+    public void setTarget(String target) {
+        this.target = target;
     }
 
     public String getSqlId() {
@@ -111,27 +74,43 @@ public class LongRunningSessionInfo {
         this.sqlId = sqlId;
     }
 
-    public long getLastCallEt() {
-        return lastCallEt;
+    public long getSofar() {
+        return sofar;
     }
 
-    public void setLastCallEt(long lastCallEt) {
-        this.lastCallEt = lastCallEt;
+    public void setSofar(long sofar) {
+        this.sofar = sofar;
     }
 
-    public Timestamp getLogonTime() {
-        return logonTime;
+    public long getTotalwork() {
+        return totalwork;
     }
 
-    public void setLogonTime(Timestamp logonTime) {
-        this.logonTime = logonTime;
+    public void setTotalwork(long totalwork) {
+        this.totalwork = totalwork;
     }
 
-    public String getKillCommand() {
-        return killCommand;
+    public double getPercentDone() {
+        return percentDone;
     }
 
-    public void setKillCommand(String killCommand) {
-        this.killCommand = killCommand;
+    public void setPercentDone(double percentDone) {
+        this.percentDone = percentDone;
+    }
+
+    public long getElapsedSeconds() {
+        return elapsedSeconds;
+    }
+
+    public void setElapsedSeconds(long elapsedSeconds) {
+        this.elapsedSeconds = elapsedSeconds;
+    }
+
+    public long getTimeRemainingSeconds() {
+        return timeRemainingSeconds;
+    }
+
+    public void setTimeRemainingSeconds(long timeRemainingSeconds) {
+        this.timeRemainingSeconds = timeRemainingSeconds;
     }
 }
