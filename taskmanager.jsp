@@ -1,39 +1,20 @@
-<%@ page import="java.util.*" %>
-<%@ page import="com.dba.models.BlockingSessionInfo" %>
-<%@ page import="com.dba.models.LongRunningSessionInfo" %>
-<%@ page import="com.dba.models.LongOperationInfo" %>
 <%@ page contentType="text/html;charset=UTF-8" language="java" %>
 
 <%
-    List<BlockingSessionInfo> blockingSessions =
-            (List<BlockingSessionInfo>) request.getAttribute("blockingSessions");
-
-    List<LongRunningSessionInfo> longRunningSessions =
-            (List<LongRunningSessionInfo>) request.getAttribute("longRunningSessions");
-
-    List<LongOperationInfo> longOperations =
-            (List<LongOperationInfo>) request.getAttribute("longOperations");
-
     String site = (String) request.getAttribute("site");
     String target = (String) request.getAttribute("target");
-    String run = (String) request.getAttribute("run");
+    String instId = (String) request.getAttribute("instId");
+    String sqlId = (String) request.getAttribute("sqlId");
+    String sqlText = (String) request.getAttribute("sqlText");
     String errorMsg = (String) request.getAttribute("errorMsg");
-
-    Integer minMinutesObj = (Integer) request.getAttribute("minMinutes");
-    int minMinutes = minMinutesObj == null ? 15 : minMinutesObj.intValue();
-
-    String[][] dbList = (String[][]) request.getAttribute("dbList");
-
-    if (blockingSessions == null) blockingSessions = new ArrayList<BlockingSessionInfo>();
-    if (longRunningSessions == null) longRunningSessions = new ArrayList<LongRunningSessionInfo>();
-    if (longOperations == null) longOperations = new ArrayList<LongOperationInfo>();
 
     String ctx = request.getContextPath();
 
-    String selectedDb = "";
-    if (site != null && target != null) {
-        selectedDb = site + "|" + target;
-    }
+    if (site == null) site = "";
+    if (target == null) target = "";
+    if (instId == null) instId = "";
+    if (sqlId == null) sqlId = "";
+    if (sqlText == null) sqlText = "";
 %>
 
 <%!
@@ -47,42 +28,13 @@
                 .replace("\"", "&quot;")
                 .replace("'", "&#39;");
     }
-
-    public String selected(String actual, String expected) {
-        if (actual == null) actual = "";
-        if (expected == null) expected = "";
-        return actual.equalsIgnoreCase(expected) ? "selected" : "";
-    }
-
-    public String formatSeconds(long seconds) {
-        if (seconds < 0) seconds = 0;
-
-        long hrs = seconds / 3600;
-        long mins = (seconds % 3600) / 60;
-        long secs = seconds % 60;
-
-        if (hrs > 0) {
-            return hrs + "h " + mins + "m " + secs + "s";
-        }
-
-        if (mins > 0) {
-            return mins + "m " + secs + "s";
-        }
-
-        return secs + "s";
-    }
-
-    public String percent(Object value) {
-        if (value == null) return "0%";
-        return String.valueOf(value) + "%";
-    }
 %>
 
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Session Monitor - DBA Monitor</title>
+<title>SQL Text - DBA Monitor</title>
 
 <style>
 * {
@@ -115,7 +67,6 @@ h1 {
     margin: 0;
     font-size: 30px;
     font-weight: 900;
-    letter-spacing: -0.5px;
 }
 
 .subtitle {
@@ -135,6 +86,10 @@ h1 {
     border-radius: 12px;
 }
 
+.back-link:hover {
+    background: rgba(34,211,238,.20);
+}
+
 .card {
     background: rgba(15,23,42,.80);
     border: 1px solid rgba(148,163,184,.22);
@@ -144,50 +99,32 @@ h1 {
     margin-bottom: 18px;
 }
 
-.card h2 {
-    margin: 0 0 14px;
-    font-size: 20px;
-}
-
-.filter-row {
-    display: flex;
-    align-items: end;
+.meta-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
     gap: 12px;
-    flex-wrap: wrap;
 }
 
-label {
-    display: block;
-    font-size: 12px;
-    color: #cbd5e1;
+.meta-box {
+    background: rgba(2,6,23,.45);
+    border: 1px solid rgba(148,163,184,.18);
+    border-radius: 14px;
+    padding: 12px;
+}
+
+.meta-label {
+    font-size: 11px;
+    color: #94a3b8;
     font-weight: 900;
     text-transform: uppercase;
-    margin-bottom: 6px;
 }
 
-select, input {
-    height: 40px;
-    border: 1px solid rgba(148,163,184,.30);
-    background: rgba(2,6,23,.58);
-    color: #e5eefb;
-    border-radius: 11px;
-    padding: 0 10px;
-    outline: none;
-}
-
-button {
-    height: 40px;
-    border: none;
-    border-radius: 11px;
-    background: #22d3ee;
-    color: #06202a;
+.meta-value {
+    margin-top: 5px;
+    font-size: 15px;
     font-weight: 900;
-    padding: 0 16px;
-    cursor: pointer;
-}
-
-button:hover {
-    filter: brightness(1.08);
+    color: #f8fafc;
+    word-break: break-word;
 }
 
 .error {
@@ -200,125 +137,48 @@ button:hover {
     font-weight: 800;
 }
 
-.summary-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 14px;
-    margin-bottom: 18px;
-}
-
-.summary-card {
-    background: rgba(15,23,42,.80);
-    border: 1px solid rgba(148,163,184,.22);
-    border-radius: 18px;
-    padding: 16px;
-    box-shadow: 0 18px 50px rgba(0,0,0,.22);
-}
-
-.summary-label {
-    color: #94a3b8;
-    font-size: 13px;
-    font-weight: 900;
-    text-transform: uppercase;
-}
-
-.summary-value {
-    font-size: 32px;
-    font-weight: 900;
-    margin-top: 7px;
-}
-
-.table-wrap {
-    overflow: auto;
-    border: 1px solid rgba(148,163,184,.20);
-    border-radius: 16px;
-}
-
-table {
-    width: 100%;
-    min-width: 1300px;
-    border-collapse: collapse;
-}
-
-th, td {
-    border-bottom: 1px solid rgba(148,163,184,.16);
-    padding: 11px;
-    text-align: left;
-    vertical-align: top;
-    font-size: 13px;
-}
-
-th {
-    background: rgba(2,6,23,.75);
-    color: #cbd5e1;
-    text-transform: uppercase;
-    font-size: 12px;
-    font-weight: 900;
-    position: sticky;
-    top: 0;
-    z-index: 2;
-}
-
-.badge {
-    display: inline-flex;
+.sql-header {
+    display: flex;
+    justify-content: space-between;
     align-items: center;
-    justify-content: center;
-    padding: 5px 9px;
-    border-radius: 999px;
-    font-size: 11px;
-    font-weight: 900;
-    white-space: nowrap;
+    gap: 12px;
+    margin-bottom: 12px;
 }
 
-.badge-critical {
-    background: rgba(239,68,68,.18);
-    color: #fecaca;
-}
-
-.badge-warning {
-    background: rgba(245,158,11,.18);
-    color: #fbbf24;
-}
-
-.badge-good {
-    background: rgba(34,197,94,.16);
-    color: #86efac;
-}
-
-.badge-normal {
-    background: rgba(148,163,184,.18);
-    color: #cbd5e1;
-}
-
-.sql-box {
-    font-family: Consolas, monospace;
-    background: rgba(2,6,23,.72);
-    border: 1px solid rgba(148,163,184,.22);
-    border-radius: 10px;
-    padding: 8px;
-    color: #fde68a;
-    max-width: 360px;
-    white-space: normal;
-    word-break: break-word;
+.sql-header h2 {
+    margin: 0;
+    font-size: 20px;
 }
 
 .copy-btn {
-    height: 30px;
-    padding: 0 9px;
-    border-radius: 8px;
-    font-size: 12px;
-    margin-top: 6px;
-    background: rgba(34,211,238,.18);
-    color: #67e8f9;
-    border: 1px solid rgba(34,211,238,.25);
+    height: 38px;
+    border: none;
+    border-radius: 11px;
+    background: #22d3ee;
+    color: #06202a;
+    font-weight: 900;
+    padding: 0 15px;
+    cursor: pointer;
 }
 
-.empty {
-    padding: 24px;
-    text-align: center;
-    color: #94a3b8;
-    border: 1px dashed rgba(148,163,184,.30);
+.copy-btn:hover {
+    filter: brightness(1.08);
+}
+
+.sql-box {
+    width: 100%;
+    min-height: 420px;
+    background: rgba(2,6,23,.82);
+    border: 1px solid rgba(148,163,184,.24);
     border-radius: 16px;
+    color: #fde68a;
+    padding: 18px;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow: auto;
 }
 
 .note {
@@ -328,21 +188,24 @@ th {
     line-height: 1.5;
 }
 
-.section-title-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 12px;
+.warning-note {
+    background: rgba(245,158,11,.12);
+    border: 1px solid rgba(245,158,11,.30);
+    color: #fde68a;
+    padding: 12px;
+    border-radius: 13px;
+    margin-bottom: 14px;
+    font-size: 13px;
+    font-weight: 700;
 }
 
 @media(max-width: 900px) {
     .topbar {
-        align-items: flex-start;
         flex-direction: column;
+        align-items: flex-start;
     }
 
-    .summary-grid {
+    .meta-grid {
         grid-template-columns: 1fr;
     }
 
@@ -359,13 +222,13 @@ th {
 
     <div class="topbar">
         <div>
-            <h1>Session Monitor</h1>
+            <h1>SQL Text Viewer</h1>
             <div class="subtitle">
-                RAC-aware DBA tool using GV$SESSION and GV$SESSION_LONGOPS.
+                View SQL text from GV$SQL using SQL ID and RAC instance.
             </div>
         </div>
 
-        <a class="back-link" href="<%= ctx %>/dashboard">← Back to Dashboard</a>
+        <a class="back-link" href="javascript:history.back()">← Back to Session Monitor</a>
     </div>
 
     <% if (errorMsg != null) { %>
@@ -373,261 +236,85 @@ th {
     <% } %>
 
     <div class="card">
-        <form method="get" action="<%= ctx %>/sessionmonitor" class="filter-row" onsubmit="return prepareDbSelection();">
-            <input type="hidden" name="run" value="Y">
-            <input type="hidden" name="site" id="siteInput" value="<%= esc(site) %>">
-            <input type="hidden" name="target" id="targetInput" value="<%= esc(target) %>">
-
-            <div>
-                <label>Database</label>
-                <select id="dbSelect" required>
-                    <option value="">Select Database</option>
-
-                    <% if (dbList != null) {
-                        for (int i = 0; i < dbList.length; i++) {
-                            String dbSite = dbList[i][0];
-                            String dbTarget = dbList[i][1];
-                            String dbValue = dbSite + "|" + dbTarget;
-                    %>
-                        <option value="<%= esc(dbValue) %>" <%= selected(selectedDb, dbValue) %>>
-                            <%= esc(dbSite) %>-<%= esc(dbTarget) %>
-                        </option>
-                    <%  }
-                    } %>
-                </select>
+        <div class="meta-grid">
+            <div class="meta-box">
+                <div class="meta-label">Database</div>
+                <div class="meta-value"><%= esc(site) %>-<%= esc(target) %></div>
             </div>
 
-            <div>
-                <label>Long Running Min</label>
-                <input type="number" name="minMinutes" value="<%= minMinutes %>" min="1" max="999">
+            <div class="meta-box">
+                <div class="meta-label">Instance</div>
+                <div class="meta-value"><%= esc(instId) %></div>
             </div>
 
-            <button type="submit">Check Sessions</button>
-        </form>
+            <div class="meta-box">
+                <div class="meta-label">SQL ID</div>
+                <div class="meta-value"><%= esc(sqlId) %></div>
+            </div>
+
+            <div class="meta-box">
+                <div class="meta-label">Source</div>
+                <div class="meta-value">GV$SQL</div>
+            </div>
+        </div>
 
         <div class="note">
-            This page only generates kill commands. It does not execute any kill session command.
+            If SQL text is not found, it may have aged out from shared pool.
         </div>
     </div>
 
-    <% if ("Y".equalsIgnoreCase(run)) { %>
+    <div class="warning-note">
+        This page only displays SQL text. It does not execute, modify, or kill any session.
+    </div>
 
-        <div class="summary-grid">
-            <div class="summary-card">
-                <div class="summary-label">Blocking Sessions</div>
-                <div class="summary-value" style="color:<%= blockingSessions.size() > 0 ? "#fecaca" : "#86efac" %>;">
-                    <%= blockingSessions.size() %>
-                </div>
-            </div>
-
-            <div class="summary-card">
-                <div class="summary-label">Long Running Active</div>
-                <div class="summary-value" style="color:<%= longRunningSessions.size() > 0 ? "#fbbf24" : "#86efac" %>;">
-                    <%= longRunningSessions.size() %>
-                </div>
-            </div>
-
-            <div class="summary-card">
-                <div class="summary-label">Long Operations</div>
-                <div class="summary-value" style="color:<%= longOperations.size() > 0 ? "#67e8f9" : "#86efac" %>;">
-                    <%= longOperations.size() %>
-                </div>
-            </div>
+    <div class="card">
+        <div class="sql-header">
+            <h2>SQL Text</h2>
+            <button class="copy-btn" type="button" onclick="copySqlText()">Copy SQL</button>
         </div>
 
-        <div class="card">
-            <div class="section-title-row">
-                <h2>Blocking Sessions</h2>
-                <span class="badge <%= blockingSessions.size() > 0 ? "badge-critical" : "badge-good" %>">
-                    <%= blockingSessions.size() > 0 ? "Action Required" : "No Blocking Found" %>
-                </span>
-            </div>
+        <pre class="sql-box" id="sqlTextBox"><%= esc(sqlText) %></pre>
+    </div>
 
-            <% if (blockingSessions.isEmpty()) { %>
+</div>
 
-                <div class="empty">No blocking sessions found.</div>
+<script>
+function copySqlText() {
+    var box = document.getElementById("sqlTextBox");
 
-            <% } else { %>
+    if (!box) {
+        alert("SQL text not found.");
+        return;
+    }
 
-                <div class="table-wrap">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Blocked</th>
-                                <th>Blocker</th>
-                                <th>User</th>
-                                <th>Machine</th>
-                                <th>Program / Module</th>
-                                <th>Status</th>
-                                <th>Wait Event</th>
-                                <th>Wait Class</th>
-                                <th>Waiting</th>
-                                <th>SQL ID</th>
-                                <th>Kill Blocker Command</th>
-                            </tr>
-                        </thead>
+    var text = box.innerText || box.textContent;
 
-                        <tbody>
-                        <% for (BlockingSessionInfo b : blockingSessions) { %>
-                            <tr>
-                                <td>
-                                    <span class="badge badge-warning">Inst <%= esc(b.getBlockedInstId()) %></span><br>
-                                    SID: <b><%= esc(b.getBlockedSid()) %></b><br>
-                                    Serial: <%= esc(b.getBlockedSerial()) %>
-                                </td>
+    if (!text || text.trim() === "") {
+        alert("No SQL text to copy.");
+        return;
+    }
 
-                                <td>
-                                    <span class="badge badge-critical">Inst <%= esc(b.getBlockerInstId()) %></span><br>
-                                    SID: <b><%= esc(b.getBlockerSid()) %></b><br>
-                                    Serial: <%= esc(b.getBlockerSerial()) %>
-                                </td>
+    if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(function() {
+            alert("SQL copied.");
+        }).catch(function() {
+            fallbackCopy(text);
+        });
+    } else {
+        fallbackCopy(text);
+    }
+}
 
-                                <td><%= esc(b.getUsername()) %></td>
-                                <td><%= esc(b.getMachine()) %></td>
-                                <td>
-                                    <b><%= esc(b.getProgram()) %></b><br>
-                                    <span style="color:#94a3b8;"><%= esc(b.getModule()) %></span>
-                                </td>
-                                <td><span class="badge badge-normal"><%= esc(b.getStatus()) %></span></td>
-                                <td><%= esc(b.getEvent()) %></td>
-                                <td><%= esc(b.getWaitClass()) %></td>
-                                <td><%= formatSeconds(b.getSecondsInWait()) %></td>
-                                <td><%= esc(b.getSqlId()) %></td>
-                                <td>
-                                    <div class="sql-box" id="kill_block_<%= esc(b.getBlockedInstId()) %>_<%= esc(b.getBlockedSid()) %>">
-                                        <%= esc(b.getKillCommand()) %>
-                                    </div>
-                                    <button class="copy-btn" type="button"
-                                            onclick="copyText('kill_block_<%= esc(b.getBlockedInstId()) %>_<%= esc(b.getBlockedSid()) %>')">
-                                        Copy
-                                    </button>
-                                </td>
-                            </tr>
-                        <% } %>
-                        </tbody>
-                    </table>
-                </div>
+function fallbackCopy(text) {
+    var temp = document.createElement("textarea");
+    temp.value = text;
+    document.body.appendChild(temp);
+    temp.select();
+    document.execCommand("copy");
+    document.body.removeChild(temp);
+    alert("SQL copied.");
+}
+</script>
 
-            <% } %>
-        </div>
-
-        <div class="card">
-            <div class="section-title-row">
-                <h2>Long Running Active Sessions</h2>
-                <span class="badge <%= longRunningSessions.size() > 0 ? "badge-warning" : "badge-good" %>">
-                    Threshold: <%= minMinutes %> min
-                </span>
-            </div>
-
-            <% if (longRunningSessions.isEmpty()) { %>
-
-                <div class="empty">No active session running longer than <%= minMinutes %> minutes.</div>
-
-            <% } else { %>
-
-                <div class="table-wrap">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Instance</th>
-                                <th>SID / Serial</th>
-                                <th>User</th>
-                                <th>Status</th>
-                                <th>Machine</th>
-                                <th>Program / Module</th>
-                                <th>Wait Event</th>
-                                <th>Wait Class</th>
-                                <th>Running Time</th>
-                                <th>Logon Time</th>
-                                <th>SQL ID</th>
-                                <th>Kill Command</th>
-                            </tr>
-                        </thead>
-
-                        <tbody>
-                        <% for (LongRunningSessionInfo l : longRunningSessions) { %>
-                            <tr>
-                                <td><span class="badge badge-normal">Inst <%= esc(l.getInstId()) %></span></td>
-                                <td>
-                                    SID: <b><%= esc(l.getSid()) %></b><br>
-                                    Serial: <%= esc(l.getSerial()) %>
-                                </td>
-                                <td><%= esc(l.getUsername()) %></td>
-                                <td><span class="badge badge-warning"><%= esc(l.getStatus()) %></span></td>
-                                <td><%= esc(l.getMachine()) %></td>
-                                <td>
-                                    <b><%= esc(l.getProgram()) %></b><br>
-                                    <span style="color:#94a3b8;"><%= esc(l.getModule()) %></span>
-                                </td>
-                                <td><%= esc(l.getEvent()) %></td>
-                                <td><%= esc(l.getWaitClass()) %></td>
-                                <td><%= formatSeconds(l.getLastCallEt()) %></td>
-                                <td><%= esc(l.getLogonTime()) %></td>
-                                <td><%= esc(l.getSqlId()) %></td>
-                                <td>
-                                    <div class="sql-box" id="kill_long_<%= esc(l.getInstId()) %>_<%= esc(l.getSid()) %>">
-                                        <%= esc(l.getKillCommand()) %>
-                                    </div>
-                                    <button class="copy-btn" type="button"
-                                            onclick="copyText('kill_long_<%= esc(l.getInstId()) %>_<%= esc(l.getSid()) %>')">
-                                        Copy
-                                    </button>
-                                </td>
-                            </tr>
-                        <% } %>
-                        </tbody>
-                    </table>
-                </div>
-
-            <% } %>
-        </div>
-
-        <div class="card">
-            <div class="section-title-row">
-                <h2>Long Operations</h2>
-                <span class="badge <%= longOperations.size() > 0 ? "badge-normal" : "badge-good" %>">
-                    GV$SESSION_LONGOPS
-                </span>
-            </div>
-
-            <% if (longOperations.isEmpty()) { %>
-
-                <div class="empty">No active long operations found.</div>
-
-            <% } else { %>
-
-                <div class="table-wrap">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Instance</th>
-                                <th>SID / Serial</th>
-                                <th>User</th>
-                                <th>Operation</th>
-                                <th>Target</th>
-                                <th>SQL ID</th>
-                                <th>Sofar</th>
-                                <th>Total Work</th>
-                                <th>Done</th>
-                                <th>Elapsed</th>
-                                <th>Remaining</th>
-                            </tr>
-                        </thead>
-
-                        <tbody>
-                        <% for (LongOperationInfo o : longOperations) { %>
-                            <tr>
-                                <td><span class="badge badge-normal">Inst <%= esc(o.getInstId()) %></span></td>
-                                <td>
-                                    SID: <b><%= esc(o.getSid()) %></b><br>
-                                    Serial: <%= esc(o.getSerial()) %>
-                                </td>
-                                <td><%= esc(o.getUsername()) %></td>
-                                <td><%= esc(o.getOpname()) %></td>
-                                <td><%= esc(o.getTarget()) %></td>
-                                <td><%= esc(o.getSqlId()) %></td>
-                                <td><%= o.getSofar() %></td>
-                                <td><%= o.getTotalwork() %></td>
-                                <td><span class="badge badge-good"><%= o.getPercentDone() %>%</span></td>
-                                <td><%= formatSeconds(o.getElapsedSeconds()) %></td>
-                                <td><%= form
+</body>
+</html>
