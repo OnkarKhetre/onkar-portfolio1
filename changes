@@ -1,19 +1,12 @@
-.view-sql-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    margin-top: 6px;
-    text-decoration: none;
-    background: rgba(34,211,238,.16);
-    color: #67e8f9;
-    border: 1px solid rgba(34,211,238,.25);
-    padding: 6px 9px;
-    border-radius: 8px;
-    font-size: 12px;
-    font-weight: 900;
-    white-space: nowrap;
-}
+<td>
+    <%= esc(b.getSqlId()) %>
 
-.view-sql-btn:hover {
-    background: rgba(34,211,238,.25);
-}
+    <% if (b.getSqlId() != null && !b.getSqlId().trim().equals("")) { %>
+        <br>
+        <a class="view-sql-btn"
+           href="<%= sqlTextUrl(ctx, site, target, b.getBlockedInstId(), b.getSqlId()) %>"
+           target="_blank">
+            View SQL
+        </a>
+    <% } %>
+</td>
