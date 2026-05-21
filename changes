@@ -1,10 +1,10 @@
 <td>
-    <%= esc(b.getSqlId()) %>
+    <%= esc(l.getSqlId()) %>
 
-    <% if (b.getSqlId() != null && !b.getSqlId().trim().equals("")) { %>
+    <% if (l.getSqlId() != null && !l.getSqlId().trim().equals("")) { %>
         <br>
         <a class="view-sql-btn"
-           href="<%= sqlTextUrl(ctx, site, target, b.getBlockedInstId(), b.getSqlId()) %>"
+           href="<%= sqlTextUrl(ctx, site, target, l.getInstId(), l.getSqlId()) %>"
            target="_blank">
             View SQL
         </a>
