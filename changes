@@ -1,12 +1,4 @@
-<td>
-    <%= esc(o.getSqlId()) %>
-
-    <% if (o.getSqlId() != null && !o.getSqlId().trim().equals("")) { %>
-        <br>
-        <a class="view-sql-btn"
-           href="<%= sqlTextUrl(ctx, site, target, o.getInstId(), o.getSqlId()) %>"
-           target="_blank">
-            View SQL
-        </a>
-    <% } %>
-</td>
+<a href="<%= request.getContextPath() %>/jobfailuremonitor" class="nav-item">
+    <span class="nav-icon">⚙️</span>
+    <span>Job Failure Monitor</span>
+</a>
