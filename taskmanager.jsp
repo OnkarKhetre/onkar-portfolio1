@@ -1,30 +1,40 @@
 <%@ page import="java.util.*" %>
-<%@ page import="com.dba.models.DatafileInfo" %>
+<%@ page import="com.dba.models.SchedulerJobRunInfo" %>
+<%@ page import="com.dba.models.RunningSchedulerJobInfo" %>
+<%@ page import="com.dba.models.DbmsJobInfo" %>
 <%@ page contentType="text/html;charset=UTF-8" language="java" %>
 
 <%
-    List<DatafileInfo> datafiles =
-            (List<DatafileInfo>) request.getAttribute("datafiles");
+    List<SchedulerJobRunInfo> failedJobs =
+            (List<SchedulerJobRunInfo>) request.getAttribute("failedJobs");
+
+    List<SchedulerJobRunInfo> recentJobs =
+            (List<SchedulerJobRunInfo>) request.getAttribute("recentJobs");
+
+    List<RunningSchedulerJobInfo> runningJobs =
+            (List<RunningSchedulerJobInfo>) request.getAttribute("runningJobs");
+
+    List<DbmsJobInfo> brokenDbmsJobs =
+            (List<DbmsJobInfo>) request.getAttribute("brokenDbmsJobs");
 
     String site = (String) request.getAttribute("site");
     String target = (String) request.getAttribute("target");
-    String tablespaceName = (String) request.getAttribute("tablespaceName");
     String run = (String) request.getAttribute("run");
     String errorMsg = (String) request.getAttribute("errorMsg");
 
-    String addDatafileCommand = (String) request.getAttribute("addDatafileCommand");
-    String addTempfileCommand = (String) request.getAttribute("addTempfileCommand");
+    Integer lastDaysObj = (Integer) request.getAttribute("lastDays");
+    int lastDays = lastDaysObj == null ? 1 : lastDaysObj.intValue();
 
     String[][] dbList = (String[][]) request.getAttribute("dbList");
 
-    if (datafiles == null) datafiles = new ArrayList<DatafileInfo>();
+    if (failedJobs == null) failedJobs = new ArrayList<SchedulerJobRunInfo>();
+    if (recentJobs == null) recentJobs = new ArrayList<SchedulerJobRunInfo>();
+    if (runningJobs == null) runningJobs = new ArrayList<RunningSchedulerJobInfo>();
+    if (brokenDbmsJobs == null) brokenDbmsJobs = new ArrayList<DbmsJobInfo>();
 
     if (site == null) site = "";
     if (target == null) target = "";
-    if (tablespaceName == null) tablespaceName = "";
     if (run == null) run = "";
-    if (addDatafileCommand == null) addDatafileCommand = "";
-    if (addTempfileCommand == null) addTempfileCommand = "";
 
     String ctx = request.getContextPath();
 
@@ -53,24 +63,28 @@
         return actual.equalsIgnoreCase(expected) ? "selected" : "";
     }
 
-    public String ynClass(String value) {
-        if ("YES".equalsIgnoreCase(value)) {
+    public String statusClass(String status) {
+        if (status == null) return "badge-normal";
+
+        if ("FAILED".equalsIgnoreCase(status)
+                || "BROKEN".equalsIgnoreCase(status)
+                || "STOPPED".equalsIgnoreCase(status)) {
+            return "badge-danger";
+        }
+
+        if ("SUCCEEDED".equalsIgnoreCase(status)) {
             return "badge-good";
         }
 
         return "badge-warning";
     }
 
-    public String fileTypeClass(String value) {
-        if ("TEMPFILE".equalsIgnoreCase(value)) {
-            return "badge-temp";
+    public String brokenClass(String broken, int failures) {
+        if ("Y".equalsIgnoreCase(broken) || failures > 0) {
+            return "badge-danger";
         }
 
-        return "badge-data";
-    }
-
-    public String fmt(double value) {
-        return String.format("%.2f", value);
+        return "badge-good";
     }
 %>
 
@@ -78,7 +92,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Tablespace Datafiles - DBA Monitor</title>
+<title>Job Failure Monitor - DBA Monitor</title>
 
 <style>
 * {
@@ -175,10 +189,6 @@ select, input {
     outline: none;
 }
 
-input {
-    min-width: 260px;
-}
-
 button {
     height: 40px;
     border: none;
@@ -202,17 +212,6 @@ button:hover {
     border-radius: 13px;
     margin-bottom: 14px;
     font-weight: 800;
-}
-
-.warning-note {
-    background: rgba(245,158,11,.12);
-    border: 1px solid rgba(245,158,11,.30);
-    color: #fde68a;
-    padding: 12px;
-    border-radius: 13px;
-    margin-bottom: 14px;
-    font-size: 13px;
-    font-weight: 700;
 }
 
 .note {
@@ -245,10 +244,9 @@ button:hover {
 }
 
 .summary-value {
-    font-size: 28px;
+    font-size: 32px;
     font-weight: 900;
     margin-top: 7px;
-    color: #67e8f9;
 }
 
 .table-wrap {
@@ -259,7 +257,7 @@ button:hover {
 
 table {
     width: 100%;
-    min-width: 1350px;
+    min-width: 1250px;
     border-collapse: collapse;
 }
 
@@ -280,13 +278,6 @@ th {
     position: sticky;
     top: 0;
     z-index: 2;
-}
-
-.file-name {
-    font-family: Consolas, "Courier New", monospace;
-    color: #f8fafc;
-    word-break: break-word;
-    max-width: 430px;
 }
 
 .badge {
@@ -310,14 +301,9 @@ th {
     color: #fbbf24;
 }
 
-.badge-data {
-    background: rgba(34,211,238,.16);
-    color: #a5f3fc;
-}
-
-.badge-temp {
-    background: rgba(168,85,247,.20);
-    color: #e9d5ff;
+.badge-danger {
+    background: rgba(239,68,68,.18);
+    color: #fecaca;
 }
 
 .badge-normal {
@@ -325,27 +311,18 @@ th {
     color: #cbd5e1;
 }
 
-.command-box {
+.info-box {
     font-family: Consolas, "Courier New", monospace;
     background: rgba(2,6,23,.72);
     border: 1px solid rgba(148,163,184,.22);
     border-radius: 10px;
     padding: 8px;
     color: #fde68a;
-    max-width: 420px;
-    white-space: normal;
+    max-width: 520px;
+    max-height: 170px;
+    overflow: auto;
+    white-space: pre-wrap;
     word-break: break-word;
-}
-
-.copy-btn {
-    height: 30px;
-    padding: 0 9px;
-    border-radius: 8px;
-    font-size: 12px;
-    margin-top: 6px;
-    background: rgba(34,211,238,.18);
-    color: #67e8f9;
-    border: 1px solid rgba(34,211,238,.25);
 }
 
 .empty {
@@ -356,17 +333,12 @@ th {
     border-radius: 16px;
 }
 
-.command-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 14px;
-}
-
-.command-title {
-    font-size: 14px;
-    font-weight: 900;
-    color: #f8fafc;
-    margin-bottom: 8px;
+.section-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
 }
 
 @media(max-width: 900px) {
@@ -379,16 +351,8 @@ th {
         grid-template-columns: 1fr;
     }
 
-    .command-grid {
-        grid-template-columns: 1fr;
-    }
-
     .page {
         padding: 16px;
-    }
-
-    input {
-        min-width: 100%;
     }
 }
 </style>
@@ -400,9 +364,9 @@ th {
 
     <div class="topbar">
         <div>
-            <h1>Tablespace Datafiles</h1>
+            <h1>Job Failure Monitor</h1>
             <div class="subtitle">
-                View datafiles/tempfiles for one tablespace and generate safe DBA command templates.
+                Check failed scheduler jobs, currently running jobs and broken DBMS_JOB jobs.
             </div>
         </div>
 
@@ -414,7 +378,7 @@ th {
     <% } %>
 
     <div class="card">
-        <form method="get" action="<%= ctx %>/tablespacedatafiles" class="filter-row" onsubmit="return prepareDbSelection();">
+        <form method="get" action="<%= ctx %>/jobfailuremonitor" class="filter-row" onsubmit="return prepareDbSelection();">
             <input type="hidden" name="run" value="Y">
             <input type="hidden" name="site" id="siteInput" value="<%= esc(site) %>">
             <input type="hidden" name="target" id="targetInput" value="<%= esc(target) %>">
@@ -439,79 +403,61 @@ th {
             </div>
 
             <div>
-                <label>Tablespace Name</label>
-                <input type="text"
-                       name="tablespaceName"
-                       value="<%= esc(tablespaceName) %>"
-                       placeholder="Example: EISAPP"
-                       required>
+                <label>Last Days</label>
+                <input type="number" name="lastDays" value="<%= lastDays %>" min="1" max="30">
             </div>
 
-            <button type="submit">Check Datafiles</button>
+            <button type="submit">Check Jobs</button>
         </form>
 
         <div class="note">
-            This page checks only the selected tablespace. It does not scan all tablespaces, so it is safer for large databases like ARCHIVALDB.
+            Recommended for daily/night shift checks. First try Last Days = 1. Increase only if needed.
         </div>
-    </div>
-
-    <div class="warning-note">
-        This page only generates command templates. Do not execute any command without verifying ASM/storage space, standard size policy, and senior DBA approval.
     </div>
 
     <% if ("Y".equalsIgnoreCase(run)) { %>
 
-        <%
-            int totalFiles = datafiles.size();
-            int autoExtendYes = 0;
-            int autoExtendNo = 0;
-            double totalSizeGb = 0;
-
-            for (DatafileInfo d : datafiles) {
-                totalSizeGb += d.getSizeGb();
-
-                if ("YES".equalsIgnoreCase(d.getAutoExtensible())) {
-                    autoExtendYes++;
-                } else {
-                    autoExtendNo++;
-                }
-            }
-        %>
-
         <div class="summary-grid">
             <div class="summary-card">
-                <div class="summary-label">Tablespace</div>
-                <div class="summary-value"><%= esc(tablespaceName.toUpperCase()) %></div>
+                <div class="summary-label">Failed Scheduler Jobs</div>
+                <div class="summary-value" style="color:<%= failedJobs.size() > 0 ? "#fecaca" : "#86efac" %>;">
+                    <%= failedJobs.size() %>
+                </div>
             </div>
 
             <div class="summary-card">
-                <div class="summary-label">Files Found</div>
-                <div class="summary-value"><%= totalFiles %></div>
+                <div class="summary-label">Running Jobs</div>
+                <div class="summary-value" style="color:#67e8f9;">
+                    <%= runningJobs.size() %>
+                </div>
             </div>
 
             <div class="summary-card">
-                <div class="summary-label">Total Size GB</div>
-                <div class="summary-value"><%= fmt(totalSizeGb) %></div>
+                <div class="summary-label">Broken DBMS_JOB</div>
+                <div class="summary-value" style="color:<%= brokenDbmsJobs.size() > 0 ? "#fecaca" : "#86efac" %>;">
+                    <%= brokenDbmsJobs.size() %>
+                </div>
             </div>
 
             <div class="summary-card">
-                <div class="summary-label">Autoextend OFF</div>
-                <div class="summary-value" style="color:<%= autoExtendNo > 0 ? "#fbbf24" : "#86efac" %>;">
-                    <%= autoExtendNo %>
+                <div class="summary-label">Recent Job History</div>
+                <div class="summary-value" style="color:#cbd5e1;">
+                    <%= recentJobs.size() %>
                 </div>
             </div>
         </div>
 
         <div class="card">
-            <h2>Datafiles / Tempfiles</h2>
+            <div class="section-title-row">
+                <h2>Failed Scheduler Jobs</h2>
+                <span class="badge <%= failedJobs.size() > 0 ? "badge-danger" : "badge-good" %>">
+                    <%= failedJobs.size() > 0 ? "Check Required" : "No Failures" %>
+                </span>
+            </div>
 
-            <% if (datafiles.isEmpty()) { %>
+            <% if (failedJobs.isEmpty()) { %>
 
-                <div class="empty">
-                    No datafiles or tempfiles found for tablespace
-                    <b><%= esc(tablespaceName.toUpperCase()) %></b>.
-                    Check spelling and database selection.
-                </div>
+                <div class="empty">No failed/stopped/broken scheduler jobs found in last <%= lastDays %> day(s).</div>
 
             <% } else { %>
 
@@ -519,73 +465,30 @@ th {
                     <table>
                         <thead>
                             <tr>
-                                <th>Type</th>
-                                <th>Tablespace</th>
-                                <th>File Name</th>
-                                <th>Size GB</th>
-                                <th>Autoextend</th>
-                                <th>Max Size GB</th>
-                                <th>Increment MB</th>
+                                <th>Owner</th>
+                                <th>Job Name</th>
                                 <th>Status</th>
-                                <th>Enable Autoextend Command</th>
-                                <th>Resize Command</th>
+                                <th>Error#</th>
+                                <th>Log Date</th>
+                                <th>Start Date</th>
+                                <th>Duration</th>
+                                <th>Instance</th>
+                                <th>Additional Info</th>
                             </tr>
                         </thead>
 
                         <tbody>
-                        <% for (int i = 0; i < datafiles.size(); i++) {
-                            DatafileInfo d = datafiles.get(i);
-                            String autoId = "auto_cmd_" + i;
-                            String resizeId = "resize_cmd_" + i;
-                        %>
+                        <% for (SchedulerJobRunInfo j : failedJobs) { %>
                             <tr>
-                                <td>
-                                    <span class="badge <%= fileTypeClass(d.getFileType()) %>">
-                                        <%= esc(d.getFileType()) %>
-                                    </span>
-                                </td>
-
-                                <td><%= esc(d.getTablespaceName()) %></td>
-
-                                <td>
-                                    <div class="file-name"><%= esc(d.getFileName()) %></div>
-                                </td>
-
-                                <td><b><%= fmt(d.getSizeGb()) %></b></td>
-
-                                <td>
-                                    <span class="badge <%= ynClass(d.getAutoExtensible()) %>">
-                                        <%= esc(d.getAutoExtensible()) %>
-                                    </span>
-                                </td>
-
-                                <td><%= fmt(d.getMaxSizeGb()) %></td>
-
-                                <td><%= fmt(d.getIncrementMb()) %></td>
-
-                                <td>
-                                    <span class="badge badge-normal">
-                                        <%= esc(d.getStatus()) %>
-                                    </span>
-                                </td>
-
-                                <td>
-                                    <div class="command-box" id="<%= autoId %>">
-                                        <%= esc(d.getAutoExtendCommand()) %>
-                                    </div>
-                                    <button class="copy-btn" type="button" onclick="copyText('<%= autoId %>')">
-                                        Copy
-                                    </button>
-                                </td>
-
-                                <td>
-                                    <div class="command-box" id="<%= resizeId %>">
-                                        <%= esc(d.getResizeCommand()) %>
-                                    </div>
-                                    <button class="copy-btn" type="button" onclick="copyText('<%= resizeId %>')">
-                                        Copy
-                                    </button>
-                                </td>
+                                <td><%= esc(j.getOwner()) %></td>
+                                <td><b><%= esc(j.getJobName()) %></b></td>
+                                <td><span class="badge <%= statusClass(j.getStatus()) %>"><%= esc(j.getStatus()) %></span></td>
+                                <td><%= esc(j.getErrorNumber()) %></td>
+                                <td><%= esc(j.getLogDate()) %></td>
+                                <td><%= esc(j.getActualStartDate()) %></td>
+                                <td><%= esc(j.getRunDuration()) %></td>
+                                <td><%= esc(j.getInstanceId()) %></td>
+                                <td><div class="info-box"><%= esc(j.getAdditionalInfo()) %></div></td>
                             </tr>
                         <% } %>
                         </tbody>
@@ -596,37 +499,149 @@ th {
         </div>
 
         <div class="card">
-            <h2>Add File Command Templates</h2>
-
-            <div class="command-grid">
-                <div>
-                    <div class="command-title">Add Datafile</div>
-                    <div class="command-box" id="addDatafileCommand"><%= esc(addDatafileCommand) %></div>
-                    <button class="copy-btn" type="button" onclick="copyText('addDatafileCommand')">
-                        Copy
-                    </button>
-                </div>
-
-                <div>
-                    <div class="command-title">Add Tempfile</div>
-                    <div class="command-box" id="addTempfileCommand"><%= esc(addTempfileCommand) %></div>
-                    <button class="copy-btn" type="button" onclick="copyText('addTempfileCommand')">
-                        Copy
-                    </button>
-                </div>
+            <div class="section-title-row">
+                <h2>Currently Running Scheduler Jobs</h2>
+                <span class="badge badge-normal">Running: <%= runningJobs.size() %></span>
             </div>
 
-            <div class="note">
-                Use Add Datafile for normal permanent tablespaces. Use Add Tempfile only for temporary tablespaces like TEMP.
-                Replace <b>+DATA</b> with the correct ASM diskgroup if required.
+            <% if (runningJobs.isEmpty()) { %>
+
+                <div class="empty">No scheduler jobs are currently running.</div>
+
+            <% } else { %>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Owner</th>
+                                <th>Job Name</th>
+                                <th>Session ID</th>
+                                <th>Running Instance</th>
+                                <th>Elapsed Time</th>
+                                <th>CPU Used</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                        <% for (RunningSchedulerJobInfo r : runningJobs) { %>
+                            <tr>
+                                <td><%= esc(r.getOwner()) %></td>
+                                <td><b><%= esc(r.getJobName()) %></b></td>
+                                <td><%= esc(r.getSessionId()) %></td>
+                                <td><%= esc(r.getRunningInstance()) %></td>
+                                <td><%= esc(r.getElapsedTime()) %></td>
+                                <td><%= esc(r.getCpuUsed()) %></td>
+                            </tr>
+                        <% } %>
+                        </tbody>
+                    </table>
+                </div>
+
+            <% } %>
+        </div>
+
+        <div class="card">
+            <div class="section-title-row">
+                <h2>Broken / Failed DBMS_JOB Jobs</h2>
+                <span class="badge <%= brokenDbmsJobs.size() > 0 ? "badge-danger" : "badge-good" %>">
+                    <%= brokenDbmsJobs.size() > 0 ? "Check Required" : "No Broken Jobs" %>
+                </span>
             </div>
+
+            <% if (brokenDbmsJobs.isEmpty()) { %>
+
+                <div class="empty">No broken or failed DBMS_JOB jobs found.</div>
+
+            <% } else { %>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Job ID</th>
+                                <th>Schema User</th>
+                                <th>Broken</th>
+                                <th>Failures</th>
+                                <th>Last Date</th>
+                                <th>Next Date</th>
+                                <th>What</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                        <% for (DbmsJobInfo d : brokenDbmsJobs) { %>
+                            <tr>
+                                <td><b><%= d.getJobId() %></b></td>
+                                <td><%= esc(d.getSchemaUser()) %></td>
+                                <td><span class="badge <%= brokenClass(d.getBroken(), d.getFailures()) %>"><%= esc(d.getBroken()) %></span></td>
+                                <td><%= d.getFailures() %></td>
+                                <td><%= esc(d.getLastDate()) %></td>
+                                <td><%= esc(d.getNextDate()) %></td>
+                                <td><div class="info-box"><%= esc(d.getWhat()) %></div></td>
+                            </tr>
+                        <% } %>
+                        </tbody>
+                    </table>
+                </div>
+
+            <% } %>
+        </div>
+
+        <div class="card">
+            <div class="section-title-row">
+                <h2>Recent Scheduler Job History</h2>
+                <span class="badge badge-normal">Latest 100 rows</span>
+            </div>
+
+            <% if (recentJobs.isEmpty()) { %>
+
+                <div class="empty">No scheduler job history found in last <%= lastDays %> day(s).</div>
+
+            <% } else { %>
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Owner</th>
+                                <th>Job Name</th>
+                                <th>Status</th>
+                                <th>Error#</th>
+                                <th>Log Date</th>
+                                <th>Start Date</th>
+                                <th>Duration</th>
+                                <th>Instance</th>
+                                <th>Additional Info</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                        <% for (SchedulerJobRunInfo j : recentJobs) { %>
+                            <tr>
+                                <td><%= esc(j.getOwner()) %></td>
+                                <td><b><%= esc(j.getJobName()) %></b></td>
+                                <td><span class="badge <%= statusClass(j.getStatus()) %>"><%= esc(j.getStatus()) %></span></td>
+                                <td><%= esc(j.getErrorNumber()) %></td>
+                                <td><%= esc(j.getLogDate()) %></td>
+                                <td><%= esc(j.getActualStartDate()) %></td>
+                                <td><%= esc(j.getRunDuration()) %></td>
+                                <td><%= esc(j.getInstanceId()) %></td>
+                                <td><div class="info-box"><%= esc(j.getAdditionalInfo()) %></div></td>
+                            </tr>
+                        <% } %>
+                        </tbody>
+                    </table>
+                </div>
+
+            <% } %>
         </div>
 
     <% } else { %>
 
         <div class="card">
             <div class="empty">
-                Select a database and enter a tablespace name to view datafiles/tempfiles.
+                Select a database and click <b>Check Jobs</b> to view failed jobs, running jobs and broken DBMS_JOB jobs.
             </div>
         </div>
 
@@ -656,42 +671,6 @@ function prepareDbSelection() {
     targetInput.value = parts[1];
 
     return true;
-}
-
-function copyText(elementId) {
-    var el = document.getElementById(elementId);
-
-    if (!el) {
-        alert("Text not found.");
-        return;
-    }
-
-    var text = el.innerText || el.textContent;
-
-    if (!text || text.trim() === "") {
-        alert("Nothing to copy.");
-        return;
-    }
-
-    if (navigator.clipboard) {
-        navigator.clipboard.writeText(text).then(function() {
-            alert("Copied.");
-        }).catch(function() {
-            fallbackCopy(text);
-        });
-    } else {
-        fallbackCopy(text);
-    }
-}
-
-function fallbackCopy(text) {
-    var temp = document.createElement("textarea");
-    temp.value = text;
-    document.body.appendChild(temp);
-    temp.select();
-    document.execCommand("copy");
-    document.body.removeChild(temp);
-    alert("Copied.");
 }
 </script>
 
