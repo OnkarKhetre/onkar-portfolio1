@@ -6,194 +6,227 @@ import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.dba.models.DatafileInfo;
+import com.dba.models.DbmsJobInfo;
+import com.dba.models.RunningSchedulerJobInfo;
+import com.dba.models.SchedulerJobRunInfo;
 
-public class TablespaceDatafileService {
+public class JobFailureMonitorService {
 
-    public List<DatafileInfo> getDatafiles(Connection conn, String tablespaceName) throws Exception {
+    public List<SchedulerJobRunInfo> getFailedSchedulerJobs(Connection conn, int lastDays) throws Exception {
 
-        List<DatafileInfo> list = new ArrayList<DatafileInfo>();
+        List<SchedulerJobRunInfo> list = new ArrayList<SchedulerJobRunInfo>();
 
-        if (tablespaceName == null || tablespaceName.trim().equals("")) {
-            throw new Exception("Tablespace name is required.");
+        if (lastDays <= 0) {
+            lastDays = 1;
         }
-
-        String tbs = tablespaceName.trim().toUpperCase();
-
-        list.addAll(getPermanentDatafiles(conn, tbs));
-        list.addAll(getTempFiles(conn, tbs));
-
-        return list;
-    }
-
-    private List<DatafileInfo> getPermanentDatafiles(Connection conn, String tablespaceName) throws Exception {
-
-        List<DatafileInfo> list = new ArrayList<DatafileInfo>();
 
         String sql =
                 "SELECT " +
-                "    df.tablespace_name, " +
-                "    df.file_name, " +
-                "    ROUND(df.bytes / 1024 / 1024 / 1024, 2) AS size_gb, " +
-                "    df.autoextensible, " +
-                "    ROUND(df.maxbytes / 1024 / 1024 / 1024, 2) AS max_size_gb, " +
-                "    ROUND((df.increment_by * ts.block_size) / 1024 / 1024, 2) AS increment_mb, " +
-                "    df.status " +
-                "FROM dba_data_files df " +
-                "JOIN dba_tablespaces ts " +
-                "    ON df.tablespace_name = ts.tablespace_name " +
-                "WHERE df.tablespace_name = ? " +
-                "ORDER BY df.file_id";
+                "    owner, " +
+                "    job_name, " +
+                "    status, " +
+                "    TO_CHAR(error#) AS error_number, " +
+                "    additional_info, " +
+                "    CAST(log_date AS TIMESTAMP) AS log_date, " +
+                "    CAST(actual_start_date AS TIMESTAMP) AS actual_start_date, " +
+                "    TO_CHAR(run_duration) AS run_duration, " +
+                "    TO_CHAR(instance_id) AS instance_id " +
+                "FROM dba_scheduler_job_run_details " +
+                "WHERE log_date >= SYSTIMESTAMP - NUMTODSINTERVAL(?, 'DAY') " +
+                "AND status IN ('FAILED', 'STOPPED', 'BROKEN') " +
+                "ORDER BY log_date DESC";
 
         PreparedStatement ps = null;
         ResultSet rs = null;
 
         try {
             ps = conn.prepareStatement(sql);
-            ps.setString(1, tablespaceName);
+            ps.setQueryTimeout(10);
+            ps.setInt(1, lastDays);
 
             rs = ps.executeQuery();
 
             while (rs.next()) {
-                DatafileInfo item = new DatafileInfo();
+                SchedulerJobRunInfo item = new SchedulerJobRunInfo();
 
-                item.setTablespaceName(rs.getString("tablespace_name"));
-                item.setFileName(rs.getString("file_name"));
-                item.setFileType("DATAFILE");
-                item.setSizeGb(rs.getDouble("size_gb"));
-                item.setAutoExtensible(rs.getString("autoextensible"));
-                item.setMaxSizeGb(rs.getDouble("max_size_gb"));
-                item.setIncrementMb(rs.getDouble("increment_mb"));
+                item.setOwner(rs.getString("owner"));
+                item.setJobName(rs.getString("job_name"));
                 item.setStatus(rs.getString("status"));
-
-                item.setAutoExtendCommand(buildAutoExtendCommand("DATAFILE", item.getFileName()));
-                item.setResizeCommand(buildResizeCommand("DATAFILE", item.getFileName(), item.getSizeGb()));
+                item.setErrorNumber(rs.getString("error_number"));
+                item.setAdditionalInfo(rs.getString("additional_info"));
+                item.setLogDate(rs.getTimestamp("log_date"));
+                item.setActualStartDate(rs.getTimestamp("actual_start_date"));
+                item.setRunDuration(rs.getString("run_duration"));
+                item.setInstanceId(rs.getString("instance_id"));
 
                 list.add(item);
             }
 
         } finally {
-            if (rs != null) {
-                try { rs.close(); } catch (Exception e) {}
-            }
-
-            if (ps != null) {
-                try { ps.close(); } catch (Exception e) {}
-            }
+            close(rs, ps);
         }
 
         return list;
     }
 
-    private List<DatafileInfo> getTempFiles(Connection conn, String tablespaceName) throws Exception {
+    public List<SchedulerJobRunInfo> getRecentSchedulerJobs(Connection conn, int lastDays) throws Exception {
 
-        List<DatafileInfo> list = new ArrayList<DatafileInfo>();
+        List<SchedulerJobRunInfo> list = new ArrayList<SchedulerJobRunInfo>();
+
+        if (lastDays <= 0) {
+            lastDays = 1;
+        }
 
         String sql =
-                "SELECT " +
-                "    tf.tablespace_name, " +
-                "    tf.file_name, " +
-                "    ROUND(tf.bytes / 1024 / 1024 / 1024, 2) AS size_gb, " +
-                "    tf.autoextensible, " +
-                "    ROUND(tf.maxbytes / 1024 / 1024 / 1024, 2) AS max_size_gb, " +
-                "    ROUND((tf.increment_by * ts.block_size) / 1024 / 1024, 2) AS increment_mb, " +
-                "    tf.status " +
-                "FROM dba_temp_files tf " +
-                "JOIN dba_tablespaces ts " +
-                "    ON tf.tablespace_name = ts.tablespace_name " +
-                "WHERE tf.tablespace_name = ? " +
-                "ORDER BY tf.file_id";
+                "SELECT * FROM ( " +
+                "    SELECT " +
+                "        owner, " +
+                "        job_name, " +
+                "        status, " +
+                "        TO_CHAR(error#) AS error_number, " +
+                "        additional_info, " +
+                "        CAST(log_date AS TIMESTAMP) AS log_date, " +
+                "        CAST(actual_start_date AS TIMESTAMP) AS actual_start_date, " +
+                "        TO_CHAR(run_duration) AS run_duration, " +
+                "        TO_CHAR(instance_id) AS instance_id " +
+                "    FROM dba_scheduler_job_run_details " +
+                "    WHERE log_date >= SYSTIMESTAMP - NUMTODSINTERVAL(?, 'DAY') " +
+                "    ORDER BY log_date DESC " +
+                ") WHERE ROWNUM <= 100";
 
         PreparedStatement ps = null;
         ResultSet rs = null;
 
         try {
             ps = conn.prepareStatement(sql);
-            ps.setString(1, tablespaceName);
+            ps.setQueryTimeout(10);
+            ps.setInt(1, lastDays);
 
             rs = ps.executeQuery();
 
             while (rs.next()) {
-                DatafileInfo item = new DatafileInfo();
+                SchedulerJobRunInfo item = new SchedulerJobRunInfo();
 
-                item.setTablespaceName(rs.getString("tablespace_name"));
-                item.setFileName(rs.getString("file_name"));
-                item.setFileType("TEMPFILE");
-                item.setSizeGb(rs.getDouble("size_gb"));
-                item.setAutoExtensible(rs.getString("autoextensible"));
-                item.setMaxSizeGb(rs.getDouble("max_size_gb"));
-                item.setIncrementMb(rs.getDouble("increment_mb"));
+                item.setOwner(rs.getString("owner"));
+                item.setJobName(rs.getString("job_name"));
                 item.setStatus(rs.getString("status"));
-
-                item.setAutoExtendCommand(buildAutoExtendCommand("TEMPFILE", item.getFileName()));
-                item.setResizeCommand(buildResizeCommand("TEMPFILE", item.getFileName(), item.getSizeGb()));
+                item.setErrorNumber(rs.getString("error_number"));
+                item.setAdditionalInfo(rs.getString("additional_info"));
+                item.setLogDate(rs.getTimestamp("log_date"));
+                item.setActualStartDate(rs.getTimestamp("actual_start_date"));
+                item.setRunDuration(rs.getString("run_duration"));
+                item.setInstanceId(rs.getString("instance_id"));
 
                 list.add(item);
             }
 
         } finally {
-            if (rs != null) {
-                try { rs.close(); } catch (Exception e) {}
-            }
-
-            if (ps != null) {
-                try { ps.close(); } catch (Exception e) {}
-            }
+            close(rs, ps);
         }
 
         return list;
     }
 
-    public String buildAddDatafileCommand(String tablespaceName, String fileType) {
+    public List<RunningSchedulerJobInfo> getRunningSchedulerJobs(Connection conn) throws Exception {
 
-        if (tablespaceName == null || tablespaceName.trim().equals("")) {
-            return "";
+        List<RunningSchedulerJobInfo> list = new ArrayList<RunningSchedulerJobInfo>();
+
+        String sql =
+                "SELECT " +
+                "    owner, " +
+                "    job_name, " +
+                "    TO_CHAR(session_id) AS session_id, " +
+                "    TO_CHAR(running_instance) AS running_instance, " +
+                "    TO_CHAR(elapsed_time) AS elapsed_time, " +
+                "    TO_CHAR(cpu_used) AS cpu_used " +
+                "FROM dba_scheduler_running_jobs " +
+                "ORDER BY owner, job_name";
+
+        PreparedStatement ps = null;
+        ResultSet rs = null;
+
+        try {
+            ps = conn.prepareStatement(sql);
+            ps.setQueryTimeout(10);
+
+            rs = ps.executeQuery();
+
+            while (rs.next()) {
+                RunningSchedulerJobInfo item = new RunningSchedulerJobInfo();
+
+                item.setOwner(rs.getString("owner"));
+                item.setJobName(rs.getString("job_name"));
+                item.setSessionId(rs.getString("session_id"));
+                item.setRunningInstance(rs.getString("running_instance"));
+                item.setElapsedTime(rs.getString("elapsed_time"));
+                item.setCpuUsed(rs.getString("cpu_used"));
+
+                list.add(item);
+            }
+
+        } finally {
+            close(rs, ps);
         }
 
-        String tbs = tablespaceName.trim().toUpperCase();
-
-        if ("TEMPFILE".equalsIgnoreCase(fileType)) {
-            return "ALTER TABLESPACE " + tbs +
-                    " ADD TEMPFILE '+DATA' SIZE 10G AUTOEXTEND ON NEXT 1G MAXSIZE 32G;";
-        }
-
-        return "ALTER TABLESPACE " + tbs +
-                " ADD DATAFILE '+DATA' SIZE 10G AUTOEXTEND ON NEXT 1G MAXSIZE 32G;";
+        return list;
     }
 
-    private String buildAutoExtendCommand(String fileType, String fileName) {
+    public List<DbmsJobInfo> getBrokenDbmsJobs(Connection conn) throws Exception {
 
-        if (fileName == null || fileName.trim().equals("")) {
-            return "";
+        List<DbmsJobInfo> list = new ArrayList<DbmsJobInfo>();
+
+        String sql =
+                "SELECT " +
+                "    job, " +
+                "    schema_user, " +
+                "    broken, " +
+                "    failures, " +
+                "    last_date, " +
+                "    next_date, " +
+                "    what " +
+                "FROM dba_jobs " +
+                "WHERE broken = 'Y' " +
+                "OR failures > 0 " +
+                "ORDER BY failures DESC, job";
+
+        PreparedStatement ps = null;
+        ResultSet rs = null;
+
+        try {
+            ps = conn.prepareStatement(sql);
+            ps.setQueryTimeout(10);
+
+            rs = ps.executeQuery();
+
+            while (rs.next()) {
+                DbmsJobInfo item = new DbmsJobInfo();
+
+                item.setJobId(rs.getLong("job"));
+                item.setSchemaUser(rs.getString("schema_user"));
+                item.setBroken(rs.getString("broken"));
+                item.setFailures(rs.getInt("failures"));
+                item.setLastDate(rs.getTimestamp("last_date"));
+                item.setNextDate(rs.getTimestamp("next_date"));
+                item.setWhat(rs.getString("what"));
+
+                list.add(item);
+            }
+
+        } finally {
+            close(rs, ps);
         }
 
-        if ("TEMPFILE".equalsIgnoreCase(fileType)) {
-            return "ALTER DATABASE TEMPFILE '" + fileName +
-                    "' AUTOEXTEND ON NEXT 1G MAXSIZE 32G;";
-        }
-
-        return "ALTER DATABASE DATAFILE '" + fileName +
-                "' AUTOEXTEND ON NEXT 1G MAXSIZE 32G;";
+        return list;
     }
 
-    private String buildResizeCommand(String fileType, String fileName, double currentSizeGb) {
+    private void close(ResultSet rs, PreparedStatement ps) {
 
-        if (fileName == null || fileName.trim().equals("")) {
-            return "";
+        if (rs != null) {
+            try { rs.close(); } catch (Exception e) {}
         }
 
-        int suggestedSize = (int) Math.ceil(currentSizeGb + 10);
-
-        if (suggestedSize < 10) {
-            suggestedSize = 10;
+        if (ps != null) {
+            try { ps.close(); } catch (Exception e) {}
         }
-
-        if ("TEMPFILE".equalsIgnoreCase(fileType)) {
-            return "ALTER DATABASE TEMPFILE '" + fileName +
-                    "' RESIZE " + suggestedSize + "G;";
-        }
-
-        return "ALTER DATABASE DATAFILE '" + fileName +
-                "' RESIZE " + suggestedSize + "G;";
     }
 }
