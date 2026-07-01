@@ -7,10 +7,12 @@ import java.util.List;
 
 import com.dba.config.DatabaseRegistry;
 import com.dba.connection.databaseconnection;
-import com.dba.models.BlockingSessionInfo;
-import com.dba.models.LongOperationInfo;
-import com.dba.models.LongRunningSessionInfo;
-import com.dba.service.SessionMonitorService;
+import com.dba.models.DrArchiveDestInfo;
+import com.dba.models.DrArchiveSequenceInfo;
+import com.dba.models.DrDatabaseInfo;
+import com.dba.models.DrLagInfo;
+import com.dba.models.DrManagedProcessInfo;
+import com.dba.service.DrHealthMonitorService;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.WebServlet;
@@ -19,116 +21,316 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 
-@WebServlet("/sessionmonitor")
-public class SessionMonitorServlet extends HttpServlet {
+
+@WebServlet("/drhealthmonitor")
+public class DrHealthMonitorServlet extends HttpServlet {
+
     private static final long serialVersionUID = 1L;
 
-    private SessionMonitorService service = new SessionMonitorService();
+    private DrHealthMonitorService service = new DrHealthMonitorService();
+
+
 
     @Override
     protected void doGet(HttpServletRequest request, HttpServletResponse response)
             throws ServletException, IOException {
 
-        if (!isLoggedIn(request)) {
-            response.sendRedirect(request.getContextPath() + "/login.jsp");
+
+        if(!isLoggedIn(request)){
+
+            response.sendRedirect(
+                    request.getContextPath()+"/login.jsp"
+            );
+
             return;
         }
+
+
 
         String site = request.getParameter("site");
         String target = request.getParameter("target");
         String run = request.getParameter("run");
 
-        int minMinutes = parseInt(request.getParameter("minMinutes"), 15);
 
-        List<BlockingSessionInfo> blockingSessions = new ArrayList<BlockingSessionInfo>();
-        List<LongRunningSessionInfo> longRunningSessions = new ArrayList<LongRunningSessionInfo>();
-        List<LongOperationInfo> longOperations = new ArrayList<LongOperationInfo>();
 
-        Connection conn = null;
+        DrDatabaseInfo databaseInfo = null;
+
+        List<DrManagedProcessInfo> processList =
+                new ArrayList<>();
+
+        List<DrLagInfo> lagList =
+                new ArrayList<>();
+
+        List<DrArchiveSequenceInfo> sequenceList =
+                new ArrayList<>();
+
+        List<DrArchiveDestInfo> destList =
+                new ArrayList<>();
+
+
+        Connection conn=null;
+
+
 
         try {
-            if ("Y".equalsIgnoreCase(run)) {
 
-                if (site == null || site.trim().equals("")
-                        || target == null || target.trim().equals("")) {
-                    throw new Exception("Please select database.");
+
+            if("Y".equalsIgnoreCase(run)){
+
+
+                if(site==null || target==null
+                        || site.trim().equals("")
+                        || target.trim().equals("")){
+
+
+                    throw new Exception(
+                            "Please select database."
+                    );
+
                 }
 
-                conn = databaseconnection.getconnection(site, target);
 
-                if (conn == null) {
-                    throw new Exception("Could not connect to selected database.");
+
+                System.out.println(
+                        "DR MONITOR START => "
+                        +site+"-"+target
+                        +" "
+                        +new java.util.Date()
+                );
+
+
+
+                conn =
+                    databaseconnection.getconnection(
+                            site,
+                            target
+                    );
+
+
+
+                if(conn==null){
+
+                    throw new Exception(
+                            "Database connection failed."
+                    );
+
                 }
 
-                blockingSessions = service.getBlockingSessions(conn);
-                longRunningSessions = service.getLongRunningSessions(conn, minMinutes);
-                longOperations = service.getLongOperations(conn);
+
+
+                databaseInfo =
+                        service.getDatabaseInfo(conn);
+
+
+
+                processList =
+                        service.getManagedProcesses(conn);
+
+
+
+                lagList =
+                        service.getLagInfo(conn);
+
+
+
+                sequenceList =
+                        service.getArchiveSequence(conn);
+
+
+
+                destList =
+                        service.getArchiveDestination(conn);
+
+
+
+
+                System.out.println(
+                        "DR MONITOR END => "
+                        +site+"-"+target
+                        +" Process:"
+                        +processList.size()
+                        +" Lag:"
+                        +lagList.size()
+                        +" Seq:"
+                        +sequenceList.size()
+                        +" Dest:"
+                        +destList.size()
+                        +" "
+                        +new java.util.Date()
+                );
+
             }
 
-            request.setAttribute("blockingSessions", blockingSessions);
-            request.setAttribute("longRunningSessions", longRunningSessions);
-            request.setAttribute("longOperations", longOperations);
 
-            request.setAttribute("site", site);
-            request.setAttribute("target", target);
-            request.setAttribute("minMinutes", minMinutes);
-            request.setAttribute("run", run);
 
-            request.setAttribute("dbList", DatabaseRegistry.ALL_DATABASES);
 
-            request.getRequestDispatcher("/sessionmonitor.jsp").forward(request, response);
 
-        } catch (Exception e) {
+            request.setAttribute(
+                    "dbList",
+                    DatabaseRegistry.ALL_DATABASES
+            );
+
+
+            request.setAttribute(
+                    "site",
+                    site
+            );
+
+
+            request.setAttribute(
+                    "target",
+                    target
+            );
+
+
+            request.setAttribute(
+                    "run",
+                    run
+            );
+
+
+
+            request.setAttribute(
+                    "databaseInfo",
+                    databaseInfo
+            );
+
+
+            request.setAttribute(
+                    "processList",
+                    processList
+            );
+
+
+            request.setAttribute(
+                    "lagList",
+                    lagList
+            );
+
+
+            request.setAttribute(
+                    "sequenceList",
+                    sequenceList
+            );
+
+
+            request.setAttribute(
+                    "destList",
+                    destList
+            );
+
+
+
+            request.getRequestDispatcher(
+                    "/drhealthmonitor.jsp"
+            ).forward(request,response);
+
+
+
+
+
+        }
+        catch(Exception e){
+
+
             e.printStackTrace();
 
-            request.setAttribute("errorMsg", e.getMessage());
 
-            request.setAttribute("blockingSessions", blockingSessions);
-            request.setAttribute("longRunningSessions", longRunningSessions);
-            request.setAttribute("longOperations", longOperations);
+            request.setAttribute(
+                    "errorMsg",
+                    e.getMessage()
+            );
 
-            request.setAttribute("site", site);
-            request.setAttribute("target", target);
-            request.setAttribute("minMinutes", minMinutes);
-            request.setAttribute("run", run);
 
-            request.setAttribute("dbList", DatabaseRegistry.ALL_DATABASES);
+            request.setAttribute(
+                    "dbList",
+                    DatabaseRegistry.ALL_DATABASES
+            );
 
-            request.getRequestDispatcher("/sessionmonitor.jsp").forward(request, response);
 
-        } finally {
-            if (conn != null) {
-                try {
+            request.setAttribute(
+                    "databaseInfo",
+                    databaseInfo
+            );
+
+
+            request.setAttribute(
+                    "processList",
+                    processList
+            );
+
+
+            request.setAttribute(
+                    "lagList",
+                    lagList
+            );
+
+
+            request.setAttribute(
+                    "sequenceList",
+                    sequenceList
+            );
+
+
+            request.setAttribute(
+                    "destList",
+                    destList
+            );
+
+
+
+            request.getRequestDispatcher(
+                    "/drhealthmonitor.jsp"
+            ).forward(request,response);
+
+        }
+
+
+
+        finally{
+
+
+            if(conn!=null){
+
+                try{
+
                     databaseconnection.closeconnection(conn);
-                } catch (Exception e) {
-                    e.printStackTrace();
+
                 }
+                catch(Exception e){
+
+                    e.printStackTrace();
+
+                }
+
             }
+
+
         }
+
     }
 
-    private boolean isLoggedIn(HttpServletRequest request) {
 
-        HttpSession session = request.getSession(false);
 
-        if (session == null) {
+
+
+    private boolean isLoggedIn(HttpServletRequest request){
+
+
+        HttpSession session =
+                request.getSession(false);
+
+
+        if(session==null){
+
             return false;
+
         }
 
-        return session.getAttribute("loggedUser") != null;
+
+        return session.getAttribute("loggedUser")!=null;
+
+
     }
 
-    private int parseInt(String value, int defaultValue) {
-
-        try {
-            if (value == null || value.trim().equals("")) {
-                return defaultValue;
-            }
-
-            return Integer.parseInt(value);
-
-        } catch (Exception e) {
-            return defaultValue;
-        }
-    }
 }
