@@ -1,4 +1,7 @@
-<a href="<%= request.getContextPath() %>/jobfailuremonitor" class="nav-item">
-    <span class="nav-icon">⚙️</span>
-    <span>Job Failure Monitor</span>
+<a href="<%=request.getContextPath()%>/drhealthmonitor" class="nav-item">
+
+    <span class="nav-icon">🌐</span>
+
+    <span>DR Health Monitor</span>
+
 </a>
