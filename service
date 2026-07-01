@@ -6,227 +6,355 @@ import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.dba.models.DbmsJobInfo;
-import com.dba.models.RunningSchedulerJobInfo;
-import com.dba.models.SchedulerJobRunInfo;
+import com.dba.models.DrArchiveDestInfo;
+import com.dba.models.DrArchiveSequenceInfo;
+import com.dba.models.DrDatabaseInfo;
+import com.dba.models.DrLagInfo;
+import com.dba.models.DrManagedProcessInfo;
 
-public class JobFailureMonitorService {
+public class DrHealthMonitorService {
 
-    public List<SchedulerJobRunInfo> getFailedSchedulerJobs(Connection conn, int lastDays) throws Exception {
 
-        List<SchedulerJobRunInfo> list = new ArrayList<SchedulerJobRunInfo>();
+    public DrDatabaseInfo getDatabaseInfo(Connection conn) throws Exception {
 
-        if (lastDays <= 0) {
-            lastDays = 1;
-        }
+        DrDatabaseInfo info = new DrDatabaseInfo();
 
         String sql =
+                "SELECT database_role, " +
+                "open_mode, " +
+                "protection_mode, " +
+                "protection_level, " +
+                "switchover_status " +
+                "FROM v$database";
+
+
+        PreparedStatement ps = null;
+        ResultSet rs = null;
+
+        try {
+
+            ps = conn.prepareStatement(sql);
+            ps.setQueryTimeout(10);
+
+            rs = ps.executeQuery();
+
+            if(rs.next()) {
+
+                info.setDatabaseRole(rs.getString("database_role"));
+                info.setOpenMode(rs.getString("open_mode"));
+                info.setProtectionMode(rs.getString("protection_mode"));
+                info.setProtectionLevel(rs.getString("protection_level"));
+                info.setSwitchoverStatus(rs.getString("switchover_status"));
+
+            }
+
+        } finally {
+            close(rs, ps);
+        }
+
+
+        return info;
+    }
+
+
+
+    public List<DrManagedProcessInfo> getManagedProcesses(Connection conn) throws Exception {
+
+
+        List<DrManagedProcessInfo> list = new ArrayList<>();
+
+
+        String sql =
+                "SELECT process, " +
+                "status, " +
+                "thread#, " +
+                "sequence#, " +
+                "block#, " +
+                "blocks, " +
+                "client_process " +
+                "FROM v$managed_standby " +
+                "ORDER BY process";
+
+
+        PreparedStatement ps=null;
+        ResultSet rs=null;
+
+
+        try {
+
+            ps=conn.prepareStatement(sql);
+            ps.setQueryTimeout(10);
+
+            rs=ps.executeQuery();
+
+
+            while(rs.next()) {
+
+
+                DrManagedProcessInfo obj = new DrManagedProcessInfo();
+
+
+                obj.setProcess(rs.getString("process"));
+                obj.setStatus(rs.getString("status"));
+                obj.setThreadNo(rs.getString("thread#"));
+                obj.setSequenceNo(rs.getString("sequence#"));
+                obj.setBlockNo(rs.getString("block#"));
+                obj.setBlocks(rs.getString("blocks"));
+                obj.setClientProcess(rs.getString("client_process"));
+
+
+                list.add(obj);
+
+            }
+
+
+        } finally {
+
+            close(rs, ps);
+
+        }
+
+
+        return list;
+
+    }
+
+
+
+
+    public List<DrLagInfo> getLagInfo(Connection conn) throws Exception {
+
+
+        List<DrLagInfo> list = new ArrayList<>();
+
+
+        String sql =
+                "SELECT name, value, unit, time_computed " +
+                "FROM v$dataguard_stats";
+
+
+        PreparedStatement ps=null;
+        ResultSet rs=null;
+
+
+        try {
+
+
+            ps=conn.prepareStatement(sql);
+            ps.setQueryTimeout(10);
+
+
+            rs=ps.executeQuery();
+
+
+            while(rs.next()) {
+
+
+                DrLagInfo obj=new DrLagInfo();
+
+
+                obj.setName(rs.getString("name"));
+                obj.setValue(rs.getString("value"));
+                obj.setUnit(rs.getString("unit"));
+                obj.setTimeComputed(rs.getString("time_computed"));
+
+
+                list.add(obj);
+
+
+            }
+
+
+
+        } finally {
+
+            close(rs, ps);
+
+        }
+
+
+
+        return list;
+
+    }
+
+
+
+
+
+    public List<DrArchiveSequenceInfo> getArchiveSequence(Connection conn) throws Exception {
+
+
+        List<DrArchiveSequenceInfo> list=new ArrayList<>();
+
+
+        String sql =
+
                 "SELECT " +
-                "    owner, " +
-                "    job_name, " +
-                "    status, " +
-                "    TO_CHAR(error#) AS error_number, " +
-                "    additional_info, " +
-                "    CAST(log_date AS TIMESTAMP) AS log_date, " +
-                "    CAST(actual_start_date AS TIMESTAMP) AS actual_start_date, " +
-                "    TO_CHAR(run_duration) AS run_duration, " +
-                "    TO_CHAR(instance_id) AS instance_id " +
-                "FROM dba_scheduler_job_run_details " +
-                "WHERE log_date >= SYSTIMESTAMP - NUMTODSINTERVAL(?, 'DAY') " +
-                "AND status IN ('FAILED', 'STOPPED', 'BROKEN') " +
-                "ORDER BY log_date DESC";
+                "thread#, " +
+                "MAX(sequence#) received_seq, " +
+                "MAX(CASE WHEN applied='YES' THEN sequence# END) applied_seq " +
+                "FROM v$archived_log " +
+                "GROUP BY thread# " +
+                "ORDER BY thread#";
 
-        PreparedStatement ps = null;
-        ResultSet rs = null;
+
+        PreparedStatement ps=null;
+        ResultSet rs=null;
+
 
         try {
-            ps = conn.prepareStatement(sql);
+
+
+            ps=conn.prepareStatement(sql);
             ps.setQueryTimeout(10);
-            ps.setInt(1, lastDays);
 
-            rs = ps.executeQuery();
 
-            while (rs.next()) {
-                SchedulerJobRunInfo item = new SchedulerJobRunInfo();
+            rs=ps.executeQuery();
 
-                item.setOwner(rs.getString("owner"));
-                item.setJobName(rs.getString("job_name"));
-                item.setStatus(rs.getString("status"));
-                item.setErrorNumber(rs.getString("error_number"));
-                item.setAdditionalInfo(rs.getString("additional_info"));
-                item.setLogDate(rs.getTimestamp("log_date"));
-                item.setActualStartDate(rs.getTimestamp("actual_start_date"));
-                item.setRunDuration(rs.getString("run_duration"));
-                item.setInstanceId(rs.getString("instance_id"));
 
-                list.add(item);
+            while(rs.next()) {
+
+
+                DrArchiveSequenceInfo obj=new DrArchiveSequenceInfo();
+
+
+                long received =
+                        rs.getLong("received_seq");
+
+                long applied =
+                        rs.getLong("applied_seq");
+
+
+
+                obj.setThreadNo(
+                        rs.getString("thread#")
+                );
+
+                obj.setReceivedSeq(received);
+
+                obj.setAppliedSeq(applied);
+
+                obj.setGap(received-applied);
+
+
+
+                list.add(obj);
+
+
             }
 
-        } finally {
-            close(rs, ps);
-        }
-
-        return list;
-    }
-
-    public List<SchedulerJobRunInfo> getRecentSchedulerJobs(Connection conn, int lastDays) throws Exception {
-
-        List<SchedulerJobRunInfo> list = new ArrayList<SchedulerJobRunInfo>();
-
-        if (lastDays <= 0) {
-            lastDays = 1;
-        }
-
-        String sql =
-                "SELECT * FROM ( " +
-                "    SELECT " +
-                "        owner, " +
-                "        job_name, " +
-                "        status, " +
-                "        TO_CHAR(error#) AS error_number, " +
-                "        additional_info, " +
-                "        CAST(log_date AS TIMESTAMP) AS log_date, " +
-                "        CAST(actual_start_date AS TIMESTAMP) AS actual_start_date, " +
-                "        TO_CHAR(run_duration) AS run_duration, " +
-                "        TO_CHAR(instance_id) AS instance_id " +
-                "    FROM dba_scheduler_job_run_details " +
-                "    WHERE log_date >= SYSTIMESTAMP - NUMTODSINTERVAL(?, 'DAY') " +
-                "    ORDER BY log_date DESC " +
-                ") WHERE ROWNUM <= 100";
-
-        PreparedStatement ps = null;
-        ResultSet rs = null;
-
-        try {
-            ps = conn.prepareStatement(sql);
-            ps.setQueryTimeout(10);
-            ps.setInt(1, lastDays);
-
-            rs = ps.executeQuery();
-
-            while (rs.next()) {
-                SchedulerJobRunInfo item = new SchedulerJobRunInfo();
-
-                item.setOwner(rs.getString("owner"));
-                item.setJobName(rs.getString("job_name"));
-                item.setStatus(rs.getString("status"));
-                item.setErrorNumber(rs.getString("error_number"));
-                item.setAdditionalInfo(rs.getString("additional_info"));
-                item.setLogDate(rs.getTimestamp("log_date"));
-                item.setActualStartDate(rs.getTimestamp("actual_start_date"));
-                item.setRunDuration(rs.getString("run_duration"));
-                item.setInstanceId(rs.getString("instance_id"));
-
-                list.add(item);
-            }
 
         } finally {
+
             close(rs, ps);
+
         }
 
+
+
         return list;
+
+
     }
 
-    public List<RunningSchedulerJobInfo> getRunningSchedulerJobs(Connection conn) throws Exception {
 
-        List<RunningSchedulerJobInfo> list = new ArrayList<RunningSchedulerJobInfo>();
+
+
+
+    public List<DrArchiveDestInfo> getArchiveDestination(Connection conn) throws Exception {
+
+
+        List<DrArchiveDestInfo> list=new ArrayList<>();
+
 
         String sql =
+
                 "SELECT " +
-                "    owner, " +
-                "    job_name, " +
-                "    TO_CHAR(session_id) AS session_id, " +
-                "    TO_CHAR(running_instance) AS running_instance, " +
-                "    TO_CHAR(elapsed_time) AS elapsed_time, " +
-                "    TO_CHAR(cpu_used) AS cpu_used " +
-                "FROM dba_scheduler_running_jobs " +
-                "ORDER BY owner, job_name";
+                "dest_id, " +
+                "status, " +
+                "type, " +
+                "database_mode, " +
+                "recovery_mode, " +
+                "destination, " +
+                "error " +
+                "FROM v$archive_dest_status " +
+                "WHERE status <> 'INACTIVE'";
 
-        PreparedStatement ps = null;
-        ResultSet rs = null;
 
-        try {
-            ps = conn.prepareStatement(sql);
-            ps.setQueryTimeout(10);
 
-            rs = ps.executeQuery();
+        PreparedStatement ps=null;
+        ResultSet rs=null;
 
-            while (rs.next()) {
-                RunningSchedulerJobInfo item = new RunningSchedulerJobInfo();
-
-                item.setOwner(rs.getString("owner"));
-                item.setJobName(rs.getString("job_name"));
-                item.setSessionId(rs.getString("session_id"));
-                item.setRunningInstance(rs.getString("running_instance"));
-                item.setElapsedTime(rs.getString("elapsed_time"));
-                item.setCpuUsed(rs.getString("cpu_used"));
-
-                list.add(item);
-            }
-
-        } finally {
-            close(rs, ps);
-        }
-
-        return list;
-    }
-
-    public List<DbmsJobInfo> getBrokenDbmsJobs(Connection conn) throws Exception {
-
-        List<DbmsJobInfo> list = new ArrayList<DbmsJobInfo>();
-
-        String sql =
-                "SELECT " +
-                "    job, " +
-                "    schema_user, " +
-                "    broken, " +
-                "    failures, " +
-                "    last_date, " +
-                "    next_date, " +
-                "    what " +
-                "FROM dba_jobs " +
-                "WHERE broken = 'Y' " +
-                "OR failures > 0 " +
-                "ORDER BY failures DESC, job";
-
-        PreparedStatement ps = null;
-        ResultSet rs = null;
 
         try {
-            ps = conn.prepareStatement(sql);
+
+
+            ps=conn.prepareStatement(sql);
             ps.setQueryTimeout(10);
 
-            rs = ps.executeQuery();
 
-            while (rs.next()) {
-                DbmsJobInfo item = new DbmsJobInfo();
+            rs=ps.executeQuery();
 
-                item.setJobId(rs.getLong("job"));
-                item.setSchemaUser(rs.getString("schema_user"));
-                item.setBroken(rs.getString("broken"));
-                item.setFailures(rs.getInt("failures"));
-                item.setLastDate(rs.getTimestamp("last_date"));
-                item.setNextDate(rs.getTimestamp("next_date"));
-                item.setWhat(rs.getString("what"));
 
-                list.add(item);
+            while(rs.next()) {
+
+
+                DrArchiveDestInfo obj=new DrArchiveDestInfo();
+
+
+                obj.setDestId(rs.getString("dest_id"));
+                obj.setStatus(rs.getString("status"));
+                obj.setType(rs.getString("type"));
+                obj.setDatabaseMode(rs.getString("database_mode"));
+                obj.setRecoveryMode(rs.getString("recovery_mode"));
+                obj.setDestination(rs.getString("destination"));
+                obj.setError(rs.getString("error"));
+
+
+
+                list.add(obj);
+
+
             }
 
+
         } finally {
+
             close(rs, ps);
+
         }
 
+
         return list;
+
     }
+
+
+
+
 
     private void close(ResultSet rs, PreparedStatement ps) {
 
-        if (rs != null) {
-            try { rs.close(); } catch (Exception e) {}
+
+        if(rs!=null){
+
+            try{
+                rs.close();
+            }catch(Exception e){}
+
         }
 
-        if (ps != null) {
-            try { ps.close(); } catch (Exception e) {}
+
+        if(ps!=null){
+
+            try{
+                ps.close();
+            }catch(Exception e){}
+
         }
+
+
     }
+
 }
