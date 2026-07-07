@@ -6,355 +6,121 @@ import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.dba.models.DrArchiveDestInfo;
-import com.dba.models.DrArchiveSequenceInfo;
-import com.dba.models.DrDatabaseInfo;
-import com.dba.models.DrLagInfo;
-import com.dba.models.DrManagedProcessInfo;
+import com.dba.models.LockNode;
 
-public class DrHealthMonitorService {
+public class LockTreeService {
 
+    public List<LockNode> getLockTree(Connection conn) throws Exception {
+        
+        List<LockNode> list = new ArrayList<LockNode>();
 
-    public DrDatabaseInfo getDatabaseInfo(Connection conn) throws Exception {
-
-        DrDatabaseInfo info = new DrDatabaseInfo();
-
-        String sql =
-                "SELECT database_role, " +
-                "open_mode, " +
-                "protection_mode, " +
-                "protection_level, " +
-                "switchover_status " +
-                "FROM v$database";
-
+        // The query is broken down line-by-line for readability
+        String sql = 
+            "SELECT " +
+            "    LEVEL AS lock_depth, " +
+            "    inst_id, " +
+            "    sid, " +
+            "    serial#, " +
+            "    username, " +
+            "    osuser, " +
+            "    program, " +
+            "    blocking_instance, " +
+            "    blocking_session, " +
+            "    event, " +
+            "    seconds_in_wait, " +
+            "    sql_id " +
+            "FROM " +
+            "    gv$session " +
+            "START WITH " +
+            "    blocking_session IS NULL " +
+            "    AND sid IN ( " +
+            "        SELECT DISTINCT blocking_session " +
+            "        FROM gv$session " +
+            "        WHERE blocking_session IS NOT NULL " +
+            "    ) " +
+            "CONNECT BY PRIOR " +
+            "    sid = blocking_session " +
+            "    AND PRIOR inst_id = blocking_instance " +
+            "ORDER SIBLINGS BY " +
+            "    seconds_in_wait DESC";
 
         PreparedStatement ps = null;
         ResultSet rs = null;
 
         try {
-
+            
             ps = conn.prepareStatement(sql);
-            ps.setQueryTimeout(10);
-
             rs = ps.executeQuery();
 
-            if(rs.next()) {
-
-                info.setDatabaseRole(rs.getString("database_role"));
-                info.setOpenMode(rs.getString("open_mode"));
-                info.setProtectionMode(rs.getString("protection_mode"));
-                info.setProtectionLevel(rs.getString("protection_level"));
-                info.setSwitchoverStatus(rs.getString("switchover_status"));
-
-            }
-
-        } finally {
-            close(rs, ps);
-        }
-
-
-        return info;
-    }
-
-
-
-    public List<DrManagedProcessInfo> getManagedProcesses(Connection conn) throws Exception {
-
-
-        List<DrManagedProcessInfo> list = new ArrayList<>();
-
-
-        String sql =
-                "SELECT process, " +
-                "status, " +
-                "thread#, " +
-                "sequence#, " +
-                "block#, " +
-                "blocks, " +
-                "client_process " +
-                "FROM v$managed_standby " +
-                "ORDER BY process";
-
-
-        PreparedStatement ps=null;
-        ResultSet rs=null;
-
-
-        try {
-
-            ps=conn.prepareStatement(sql);
-            ps.setQueryTimeout(10);
-
-            rs=ps.executeQuery();
-
-
-            while(rs.next()) {
-
-
-                DrManagedProcessInfo obj = new DrManagedProcessInfo();
-
-
-                obj.setProcess(rs.getString("process"));
-                obj.setStatus(rs.getString("status"));
-                obj.setThreadNo(rs.getString("thread#"));
-                obj.setSequenceNo(rs.getString("sequence#"));
-                obj.setBlockNo(rs.getString("block#"));
-                obj.setBlocks(rs.getString("blocks"));
-                obj.setClientProcess(rs.getString("client_process"));
-
-
-                list.add(obj);
-
-            }
-
-
-        } finally {
-
-            close(rs, ps);
-
-        }
-
-
-        return list;
-
-    }
-
-
-
-
-    public List<DrLagInfo> getLagInfo(Connection conn) throws Exception {
-
-
-        List<DrLagInfo> list = new ArrayList<>();
-
-
-        String sql =
-                "SELECT name, value, unit, time_computed " +
-                "FROM v$dataguard_stats";
-
-
-        PreparedStatement ps=null;
-        ResultSet rs=null;
-
-
-        try {
-
-
-            ps=conn.prepareStatement(sql);
-            ps.setQueryTimeout(10);
-
-
-            rs=ps.executeQuery();
-
-
-            while(rs.next()) {
-
-
-                DrLagInfo obj=new DrLagInfo();
-
-
-                obj.setName(rs.getString("name"));
-                obj.setValue(rs.getString("value"));
-                obj.setUnit(rs.getString("unit"));
-                obj.setTimeComputed(rs.getString("time_computed"));
-
-
-                list.add(obj);
-
-
-            }
-
-
-
-        } finally {
-
-            close(rs, ps);
-
-        }
-
-
-
-        return list;
-
-    }
-
-
-
-
-
-    public List<DrArchiveSequenceInfo> getArchiveSequence(Connection conn) throws Exception {
-
-
-        List<DrArchiveSequenceInfo> list=new ArrayList<>();
-
-
-        String sql =
-
-                "SELECT " +
-                "thread#, " +
-                "MAX(sequence#) received_seq, " +
-                "MAX(CASE WHEN applied='YES' THEN sequence# END) applied_seq " +
-                "FROM v$archived_log " +
-                "GROUP BY thread# " +
-                "ORDER BY thread#";
-
-
-        PreparedStatement ps=null;
-        ResultSet rs=null;
-
-
-        try {
-
-
-            ps=conn.prepareStatement(sql);
-            ps.setQueryTimeout(10);
-
-
-            rs=ps.executeQuery();
-
-
-            while(rs.next()) {
-
-
-                DrArchiveSequenceInfo obj=new DrArchiveSequenceInfo();
-
-
-                long received =
-                        rs.getLong("received_seq");
-
-                long applied =
-                        rs.getLong("applied_seq");
-
-
-
-                obj.setThreadNo(
-                        rs.getString("thread#")
+            while (rs.next()) {
+                
+                LockNode node = new LockNode();
+                
+                node.setLevel(rs.getInt("lock_depth"));
+                node.setInstId(rs.getString("inst_id"));
+                node.setSid(rs.getString("sid"));
+                node.setSerial(rs.getString("serial#"));
+                
+                node.setUsername(rs.getString("username"));
+                node.setOsuser(rs.getString("osuser"));
+                node.setProgram(rs.getString("program"));
+                
+                node.setBlockingInst(rs.getString("blocking_instance"));
+                node.setBlockingSid(rs.getString("blocking_session"));
+                
+                node.setEvent(rs.getString("event"));
+                node.setSecondsInWait(rs.getLong("seconds_in_wait"));
+                node.setSqlId(rs.getString("sql_id"));
+
+                // Build the kill command 
+                String killCmd = buildKillCommand(
+                    node.getSid(), 
+                    node.getSerial(), 
+                    node.getInstId()
                 );
+                
+                node.setKillCommand(killCmd);
 
-                obj.setReceivedSeq(received);
-
-                obj.setAppliedSeq(applied);
-
-                obj.setGap(received-applied);
-
-
-
-                list.add(obj);
-
-
+                list.add(node);
             }
-
-
+            
         } finally {
-
-            close(rs, ps);
-
+            
+            // Expanded try-catch blocks for clean resource closing
+            if (rs != null) {
+                try { 
+                    rs.close(); 
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+            
+            if (ps != null) {
+                try { 
+                    ps.close(); 
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+            
         }
-
-
 
         return list;
-
-
     }
 
-
-
-
-
-    public List<DrArchiveDestInfo> getArchiveDestination(Connection conn) throws Exception {
-
-
-        List<DrArchiveDestInfo> list=new ArrayList<>();
-
-
-        String sql =
-
-                "SELECT " +
-                "dest_id, " +
-                "status, " +
-                "type, " +
-                "database_mode, " +
-                "recovery_mode, " +
-                "destination, " +
-                "error " +
-                "FROM v$archive_dest_status " +
-                "WHERE status <> 'INACTIVE'";
-
-
-
-        PreparedStatement ps=null;
-        ResultSet rs=null;
-
-
-        try {
-
-
-            ps=conn.prepareStatement(sql);
-            ps.setQueryTimeout(10);
-
-
-            rs=ps.executeQuery();
-
-
-            while(rs.next()) {
-
-
-                DrArchiveDestInfo obj=new DrArchiveDestInfo();
-
-
-                obj.setDestId(rs.getString("dest_id"));
-                obj.setStatus(rs.getString("status"));
-                obj.setType(rs.getString("type"));
-                obj.setDatabaseMode(rs.getString("database_mode"));
-                obj.setRecoveryMode(rs.getString("recovery_mode"));
-                obj.setDestination(rs.getString("destination"));
-                obj.setError(rs.getString("error"));
-
-
-
-                list.add(obj);
-
-
-            }
-
-
-        } finally {
-
-            close(rs, ps);
-
+    private String buildKillCommand(String sid, String serial, String instId) {
+        
+        if (sid == null || sid.trim().equals("") || 
+            serial == null || serial.trim().equals("") || 
+            instId == null || instId.trim().equals("")) {
+            
+            return "";
         }
-
-
-        return list;
-
+        
+        return "ALTER SYSTEM KILL SESSION '" + 
+               sid.trim() + "," + 
+               serial.trim() + ",@" + 
+               instId.trim() + 
+               "' IMMEDIATE;";
     }
-
-
-
-
-
-    private void close(ResultSet rs, PreparedStatement ps) {
-
-
-        if(rs!=null){
-
-            try{
-                rs.close();
-            }catch(Exception e){}
-
-        }
-
-
-        if(ps!=null){
-
-            try{
-                ps.close();
-            }catch(Exception e){}
-
-        }
-
-
-    }
-
 }
