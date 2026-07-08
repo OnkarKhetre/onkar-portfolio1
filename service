@@ -3,198 +3,187 @@ package com.dba.service;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
-import com.dba.models.LockNode;
+import com.dba.models.ArchiveGap;
+import com.dba.models.GoldenGateLag;
+import com.dba.models.MrpStatus;
 
-public class LockTreeService {
+public class AdvancedNotificationService {
 
-    public List<LockNode> getLockTree(Connection conn) throws Exception {
+    // --------------------------------------------------------
+    // 1. Check Data Guard Sync Gap
+    // --------------------------------------------------------
+    public ArchiveGap checkArchiveGap(Connection drConn) throws Exception {
         
-        // This will hold the final sorted tree for the JSP
-        List<LockNode> finalTree = new ArrayList<LockNode>();
+        ArchiveGap gapData = new ArchiveGap();
         
-        // This acts as our temporary in-memory database
-        Map<String, LockNode> allNodesMap = new HashMap<String, LockNode>();
-        
-        // This will store the IDs of the Root Blockers
-        Set<String> rootBlockerKeys = new HashSet<String>();
-
-        // --------------------------------------------------------
-        // STEP 1: Fast fetch of ONLY the sessions that are waiting
-        // --------------------------------------------------------
-        String sqlBlocked = 
+        // Query calculates the difference between highest received and highest applied log
+        String sql = 
             "SELECT " +
-            "    inst_id, sid, serial#, username, osuser, program, " +
-            "    blocking_instance, blocking_session, event, seconds_in_wait, sql_id " +
+            "    thread#, " +
+            "    MAX(sequence#) AS max_received, " +
+            "    MAX(CASE WHEN applied = 'YES' THEN sequence# ELSE 0 END) AS max_applied " +
             "FROM " +
-            "    gv$session " +
-            "WHERE " +
-            "    blocking_session IS NOT NULL";
+            "    v$archived_log " +
+            "GROUP BY " +
+            "    thread#";
 
-        PreparedStatement ps1 = null;
-        ResultSet rs1 = null;
+        PreparedStatement ps = null;
+        ResultSet rs = null;
 
         try {
-            ps1 = conn.prepareStatement(sqlBlocked);
-            rs1 = ps1.executeQuery();
+            
+            ps = drConn.prepareStatement(sql);
+            rs = rs = ps.executeQuery();
 
-            while (rs1.next()) {
+            if (rs.next()) {
                 
-                LockNode node = mapRowToNode(rs1);
+                long received = rs.getLong("max_received");
+                long applied = rs.getLong("max_applied");
                 
-                // Save the node to our Java Map using "InstId_Sid" as the unique key
-                String nodeKey = node.getInstId() + "_" + node.getSid();
-                allNodesMap.put(nodeKey, node);
-                
-                // Track who is blocking this session
-                String blockerKey = node.getBlockingInst() + "_" + node.getBlockingSid();
-                rootBlockerKeys.add(blockerKey);
+                gapData.setThread(rs.getInt("thread#"));
+                gapData.setMaxReceived(received);
+                gapData.setMaxApplied(applied);
+                gapData.setGap(received - applied);
                 
             }
+            
         } finally {
-            if (rs1 != null) try { rs1.close(); } catch (Exception e) {}
-            if (ps1 != null) try { ps1.close(); } catch (Exception e) {}
-        }
-
-        // If no one is blocked, return the empty list immediately
-        if (allNodesMap.isEmpty()) {
-            return finalTree;
-        }
-
-        // --------------------------------------------------------
-        // STEP 2: Fast fetch of the Root Blockers
-        // --------------------------------------------------------
-        
-        // Remove blockers that we already fetched (in case a blocker is also blocked by someone else)
-        rootBlockerKeys.removeIf(key -> allNodesMap.containsKey(key));
-
-        if (!rootBlockerKeys.isEmpty()) {
             
-            // Dynamically build a query to fetch only the exact root blockers
-            StringBuilder sqlRoots = new StringBuilder(
-                "SELECT " +
-                "    inst_id, sid, serial#, username, osuser, program, " +
-                "    blocking_instance, blocking_session, event, seconds_in_wait, sql_id " +
-                "FROM " +
-                "    gv$session " +
-                "WHERE 1=0 "
-            );
-
-            for (String key : rootBlockerKeys) {
-                String[] parts = key.split("_");
-                sqlRoots.append(" OR (inst_id = ").append(parts[0]).append(" AND sid = ").append(parts[1]).append(") ");
-            }
-
-            PreparedStatement ps2 = null;
-            ResultSet rs2 = null;
-
-            try {
-                ps2 = conn.prepareStatement(sqlRoots.toString());
-                rs2 = ps2.executeQuery();
-
-                while (rs2.next()) {
-                    
-                    LockNode rootNode = mapRowToNode(rs2);
-                    
-                    String nodeKey = rootNode.getInstId() + "_" + rootNode.getSid();
-                    allNodesMap.put(nodeKey, rootNode);
-                    
+            if (rs != null) {
+                try { 
+                    rs.close(); 
+                } catch (Exception e) { 
+                    e.printStackTrace(); 
                 }
-            } finally {
-                if (rs2 != null) try { rs2.close(); } catch (Exception e) {}
-                if (ps2 != null) try { ps2.close(); } catch (Exception e) {}
             }
+            
+            if (ps != null) {
+                try { 
+                    ps.close(); 
+                } catch (Exception e) { 
+                    e.printStackTrace(); 
+                }
+            }
+            
         }
 
-        // --------------------------------------------------------
-        // STEP 3: Build the Hierarchy Tree in Java Memory
-        // --------------------------------------------------------
-        
-        for (LockNode node : allNodesMap.values()) {
-            
-            String blockerKey = node.getBlockingInst() + "_" + node.getBlockingSid();
-            
-            // If this node is NOT blocked by anyone currently in our map, it is a ROOT
-            if (!allNodesMap.containsKey(blockerKey)) {
-                
-                node.setLevel(1);
-                
-                finalTree.add(node);
-                
-                // Recursively find all children of this root
-                addChildrenToTree(node, allNodesMap, finalTree, 2);
-            }
-        }
-
-        return finalTree;
+        return gapData;
     }
 
-    /**
-     * Recursive function to link waiting sessions under their blockers.
-     */
-    private void addChildrenToTree(LockNode parent, Map<String, LockNode> allNodesMap, List<LockNode> finalTree, int currentLevel) {
+
+    // --------------------------------------------------------
+    // 2. Check MRP (Managed Recovery Process) Status on DR
+    // --------------------------------------------------------
+    public MrpStatus checkMrpStatus(Connection drConn) throws Exception {
         
-        for (LockNode child : allNodesMap.values()) {
+        MrpStatus mrp = new MrpStatus();
+        
+        // Default to STOPPED in case the query returns zero rows
+        mrp.setStatus("STOPPED"); 
+        
+        String sql = 
+            "SELECT " +
+            "    process, " +
+            "    status, " +
+            "    sequence# " +
+            "FROM " +
+            "    gv$managed_standby " +
+            "WHERE " +
+            "    process LIKE 'MRP%'";
+
+        PreparedStatement ps = null;
+        ResultSet rs = null;
+
+        try {
             
-            // If the child says it is blocked by the parent
-            if (parent.getSid().equals(child.getBlockingSid()) && parent.getInstId().equals(child.getBlockingInst())) {
+            ps = drConn.prepareStatement(sql);
+            rs = ps.executeQuery();
+
+            if (rs.next()) {
                 
-                child.setLevel(currentLevel);
-                
-                finalTree.add(child);
-                
-                // Find children of this child (in case of a long wait chain)
-                addChildrenToTree(child, allNodesMap, finalTree, currentLevel + 1);
+                mrp.setProcess(rs.getString("process"));
+                mrp.setStatus(rs.getString("status"));
+                mrp.setSequence(rs.getString("sequence#"));
                 
             }
+            
+        } finally {
+            
+            if (rs != null) {
+                try { 
+                    rs.close(); 
+                } catch (Exception e) { 
+                    e.printStackTrace(); 
+                }
+            }
+            
+            if (ps != null) {
+                try { 
+                    ps.close(); 
+                } catch (Exception e) { 
+                    e.printStackTrace(); 
+                }
+            }
+            
         }
+
+        return mrp;
     }
 
-    /**
-     * Helper to map the ResultSet row into our LockNode Object cleanly.
-     */
-    private LockNode mapRowToNode(ResultSet rs) throws Exception {
-        
-        LockNode node = new LockNode();
-        
-        node.setInstId(rs.getString("inst_id"));
-        node.setSid(rs.getString("sid"));
-        node.setSerial(rs.getString("serial#"));
-        
-        node.setUsername(rs.getString("username"));
-        node.setOsuser(rs.getString("osuser"));
-        node.setProgram(rs.getString("program"));
-        
-        node.setBlockingInst(rs.getString("blocking_instance"));
-        node.setBlockingSid(rs.getString("blocking_session"));
-        
-        node.setEvent(rs.getString("event"));
-        node.setSecondsInWait(rs.getLong("seconds_in_wait"));
-        node.setSqlId(rs.getString("sql_id"));
-        
-        // Build the kill command instantly
-        node.setKillCommand(buildKillCommand(node.getSid(), node.getSerial(), node.getInstId()));
-        
-        return node;
-    }
 
-    /**
-     * Helper to construct the ALTER SYSTEM KILL SESSION command.
-     */
-    private String buildKillCommand(String sid, String serial, String instId) {
+    // --------------------------------------------------------
+    // 3. Check GoldenGate Lag via Archival DB
+    // --------------------------------------------------------
+    public GoldenGateLag checkGoldenGateLag(Connection archivalConn, String targetDbName) throws Exception {
         
-        if (sid == null || sid.trim().equals("") || 
-            serial == null || serial.trim().equals("") || 
-            instId == null || instId.trim().equals("")) {
-            return "";
+        GoldenGateLag ggLag = new GoldenGateLag();
+        ggLag.setDbName(targetDbName);
+        ggLag.setLagMinutes(0.0);
+        
+        // Using your exact logic to calculate lag based on the latest record
+        String sql = 
+            "SELECT " +
+            "    ROUND((SYSDATE - CAST(MAX(creation_date_time) AS DATE)) * 24 * 60, 2) AS lag_min, " +
+            "    MAX(creation_date_time) AS last_record_time " +
+            "FROM " +
+            "    iibarch.api_log_26Q1";
+
+        PreparedStatement ps = null;
+        ResultSet rs = null;
+
+        try {
+            
+            ps = archivalConn.prepareStatement(sql);
+            rs = ps.executeQuery();
+
+            if (rs.next()) {
+                
+                ggLag.setLagMinutes(rs.getDouble("lag_min"));
+                ggLag.setLastRecordTime(rs.getTimestamp("last_record_time"));
+                
+            }
+            
+        } finally {
+            
+            if (rs != null) {
+                try { 
+                    rs.close(); 
+                } catch (Exception e) { 
+                    e.printStackTrace(); 
+                }
+            }
+            
+            if (ps != null) {
+                try { 
+                    ps.close(); 
+                } catch (Exception e) { 
+                    e.printStackTrace(); 
+                }
+            }
+            
         }
-        
-        return "ALTER SYSTEM KILL SESSION '" + sid.trim() + "," + serial.trim() + ",@" + instId.trim() + "' IMMEDIATE;";
+
+        return ggLag;
     }
 }
