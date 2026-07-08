@@ -4,7 +4,11 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import com.dba.models.LockNode;
 
@@ -12,115 +16,185 @@ public class LockTreeService {
 
     public List<LockNode> getLockTree(Connection conn) throws Exception {
         
-        List<LockNode> list = new ArrayList<LockNode>();
+        // This will hold the final sorted tree for the JSP
+        List<LockNode> finalTree = new ArrayList<LockNode>();
+        
+        // This acts as our temporary in-memory database
+        Map<String, LockNode> allNodesMap = new HashMap<String, LockNode>();
+        
+        // This will store the IDs of the Root Blockers
+        Set<String> rootBlockerKeys = new HashSet<String>();
 
-        // The query is broken down line-by-line for readability
-        String sql = 
+        // --------------------------------------------------------
+        // STEP 1: Fast fetch of ONLY the sessions that are waiting
+        // --------------------------------------------------------
+        String sqlBlocked = 
             "SELECT " +
-            "    LEVEL AS lock_depth, " +
-            "    inst_id, " +
-            "    sid, " +
-            "    serial#, " +
-            "    username, " +
-            "    osuser, " +
-            "    program, " +
-            "    blocking_instance, " +
-            "    blocking_session, " +
-            "    event, " +
-            "    seconds_in_wait, " +
-            "    sql_id " +
+            "    inst_id, sid, serial#, username, osuser, program, " +
+            "    blocking_instance, blocking_session, event, seconds_in_wait, sql_id " +
             "FROM " +
             "    gv$session " +
-            "START WITH " +
-            "    blocking_session IS NULL " +
-            "    AND sid IN ( " +
-            "        SELECT DISTINCT blocking_session " +
-            "        FROM gv$session " +
-            "        WHERE blocking_session IS NOT NULL " +
-            "    ) " +
-            "CONNECT BY PRIOR " +
-            "    sid = blocking_session " +
-            "    AND PRIOR inst_id = blocking_instance " +
-            "ORDER SIBLINGS BY " +
-            "    seconds_in_wait DESC";
+            "WHERE " +
+            "    blocking_session IS NOT NULL";
 
-        PreparedStatement ps = null;
-        ResultSet rs = null;
+        PreparedStatement ps1 = null;
+        ResultSet rs1 = null;
 
         try {
-            
-            ps = conn.prepareStatement(sql);
-            rs = ps.executeQuery();
+            ps1 = conn.prepareStatement(sqlBlocked);
+            rs1 = ps1.executeQuery();
 
-            while (rs.next()) {
+            while (rs1.next()) {
                 
-                LockNode node = new LockNode();
+                LockNode node = mapRowToNode(rs1);
                 
-                node.setLevel(rs.getInt("lock_depth"));
-                node.setInstId(rs.getString("inst_id"));
-                node.setSid(rs.getString("sid"));
-                node.setSerial(rs.getString("serial#"));
+                // Save the node to our Java Map using "InstId_Sid" as the unique key
+                String nodeKey = node.getInstId() + "_" + node.getSid();
+                allNodesMap.put(nodeKey, node);
                 
-                node.setUsername(rs.getString("username"));
-                node.setOsuser(rs.getString("osuser"));
-                node.setProgram(rs.getString("program"));
+                // Track who is blocking this session
+                String blockerKey = node.getBlockingInst() + "_" + node.getBlockingSid();
+                rootBlockerKeys.add(blockerKey);
                 
-                node.setBlockingInst(rs.getString("blocking_instance"));
-                node.setBlockingSid(rs.getString("blocking_session"));
-                
-                node.setEvent(rs.getString("event"));
-                node.setSecondsInWait(rs.getLong("seconds_in_wait"));
-                node.setSqlId(rs.getString("sql_id"));
-
-                // Build the kill command 
-                String killCmd = buildKillCommand(
-                    node.getSid(), 
-                    node.getSerial(), 
-                    node.getInstId()
-                );
-                
-                node.setKillCommand(killCmd);
-
-                list.add(node);
             }
-            
         } finally {
-            
-            // Expanded try-catch blocks for clean resource closing
-            if (rs != null) {
-                try { 
-                    rs.close(); 
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-            
-            if (ps != null) {
-                try { 
-                    ps.close(); 
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-            
+            if (rs1 != null) try { rs1.close(); } catch (Exception e) {}
+            if (ps1 != null) try { ps1.close(); } catch (Exception e) {}
         }
 
-        return list;
+        // If no one is blocked, return the empty list immediately
+        if (allNodesMap.isEmpty()) {
+            return finalTree;
+        }
+
+        // --------------------------------------------------------
+        // STEP 2: Fast fetch of the Root Blockers
+        // --------------------------------------------------------
+        
+        // Remove blockers that we already fetched (in case a blocker is also blocked by someone else)
+        rootBlockerKeys.removeIf(key -> allNodesMap.containsKey(key));
+
+        if (!rootBlockerKeys.isEmpty()) {
+            
+            // Dynamically build a query to fetch only the exact root blockers
+            StringBuilder sqlRoots = new StringBuilder(
+                "SELECT " +
+                "    inst_id, sid, serial#, username, osuser, program, " +
+                "    blocking_instance, blocking_session, event, seconds_in_wait, sql_id " +
+                "FROM " +
+                "    gv$session " +
+                "WHERE 1=0 "
+            );
+
+            for (String key : rootBlockerKeys) {
+                String[] parts = key.split("_");
+                sqlRoots.append(" OR (inst_id = ").append(parts[0]).append(" AND sid = ").append(parts[1]).append(") ");
+            }
+
+            PreparedStatement ps2 = null;
+            ResultSet rs2 = null;
+
+            try {
+                ps2 = conn.prepareStatement(sqlRoots.toString());
+                rs2 = ps2.executeQuery();
+
+                while (rs2.next()) {
+                    
+                    LockNode rootNode = mapRowToNode(rs2);
+                    
+                    String nodeKey = rootNode.getInstId() + "_" + rootNode.getSid();
+                    allNodesMap.put(nodeKey, rootNode);
+                    
+                }
+            } finally {
+                if (rs2 != null) try { rs2.close(); } catch (Exception e) {}
+                if (ps2 != null) try { ps2.close(); } catch (Exception e) {}
+            }
+        }
+
+        // --------------------------------------------------------
+        // STEP 3: Build the Hierarchy Tree in Java Memory
+        // --------------------------------------------------------
+        
+        for (LockNode node : allNodesMap.values()) {
+            
+            String blockerKey = node.getBlockingInst() + "_" + node.getBlockingSid();
+            
+            // If this node is NOT blocked by anyone currently in our map, it is a ROOT
+            if (!allNodesMap.containsKey(blockerKey)) {
+                
+                node.setLevel(1);
+                
+                finalTree.add(node);
+                
+                // Recursively find all children of this root
+                addChildrenToTree(node, allNodesMap, finalTree, 2);
+            }
+        }
+
+        return finalTree;
     }
 
+    /**
+     * Recursive function to link waiting sessions under their blockers.
+     */
+    private void addChildrenToTree(LockNode parent, Map<String, LockNode> allNodesMap, List<LockNode> finalTree, int currentLevel) {
+        
+        for (LockNode child : allNodesMap.values()) {
+            
+            // If the child says it is blocked by the parent
+            if (parent.getSid().equals(child.getBlockingSid()) && parent.getInstId().equals(child.getBlockingInst())) {
+                
+                child.setLevel(currentLevel);
+                
+                finalTree.add(child);
+                
+                // Find children of this child (in case of a long wait chain)
+                addChildrenToTree(child, allNodesMap, finalTree, currentLevel + 1);
+                
+            }
+        }
+    }
+
+    /**
+     * Helper to map the ResultSet row into our LockNode Object cleanly.
+     */
+    private LockNode mapRowToNode(ResultSet rs) throws Exception {
+        
+        LockNode node = new LockNode();
+        
+        node.setInstId(rs.getString("inst_id"));
+        node.setSid(rs.getString("sid"));
+        node.setSerial(rs.getString("serial#"));
+        
+        node.setUsername(rs.getString("username"));
+        node.setOsuser(rs.getString("osuser"));
+        node.setProgram(rs.getString("program"));
+        
+        node.setBlockingInst(rs.getString("blocking_instance"));
+        node.setBlockingSid(rs.getString("blocking_session"));
+        
+        node.setEvent(rs.getString("event"));
+        node.setSecondsInWait(rs.getLong("seconds_in_wait"));
+        node.setSqlId(rs.getString("sql_id"));
+        
+        // Build the kill command instantly
+        node.setKillCommand(buildKillCommand(node.getSid(), node.getSerial(), node.getInstId()));
+        
+        return node;
+    }
+
+    /**
+     * Helper to construct the ALTER SYSTEM KILL SESSION command.
+     */
     private String buildKillCommand(String sid, String serial, String instId) {
         
         if (sid == null || sid.trim().equals("") || 
             serial == null || serial.trim().equals("") || 
             instId == null || instId.trim().equals("")) {
-            
             return "";
         }
         
-        return "ALTER SYSTEM KILL SESSION '" + 
-               sid.trim() + "," + 
-               serial.trim() + ",@" + 
-               instId.trim() + 
-               "' IMMEDIATE;";
+        return "ALTER SYSTEM KILL SESSION '" + sid.trim() + "," + serial.trim() + ",@" + instId.trim() + "' IMMEDIATE;";
     }
 }
