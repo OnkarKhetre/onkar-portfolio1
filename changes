@@ -1,12 +1,57 @@
-            <div>
-                <label>Tracked Table</label>
-                <select name="tableName" id="tableSelect" required>
-                    <option value="">Select Table</option>
-                    <% for (TableConfig tc : trackedTables) { %>
-                        <!-- We use data-db to link this table to its parent database -->
-                        <option value="<%= esc(tc.getTableName()) %>" data-db="<%= esc(tc.getTargetDb()) %>" <%= selected(tableName, tc.getTableName()) %>>
-                            <%= esc(tc.getTableName()) %>
-                        </option>
-                    <% } %>
-                </select>
-            </div>
+<script>
+    // NEW: Runs instantly when the page loads, and whenever the Database dropdown changes
+    function filterTables() {
+        var dbSelect = document.getElementById("dbSelect");
+        var tableSelect = document.getElementById("tableSelect");
+        
+        if (!dbSelect || !tableSelect) return;
+        
+        var selectedDbString = dbSelect.value; // Looks like "PR|MIDB"
+        var selectedTarget = selectedDbString.split("|")[1]; // Extracts "MIDB"
+        
+        var options = tableSelect.getElementsByTagName("option");
+        
+        for (var i = 0; i < options.length; i++) {
+            var opt = options[i];
+            var optDb = opt.getAttribute("data-db");
+            
+            // Show the default "Select Table" option OR tables that match the selected DB
+            if (!optDb || optDb === selectedTarget) {
+                opt.style.display = "";
+            } else {
+                opt.style.display = "none";
+            }
+        }
+    }
+
+    // Attach the filter to the database dropdown
+    window.onload = function() {
+        var dbSelect = document.getElementById("dbSelect");
+        if (dbSelect) {
+            dbSelect.addEventListener("change", filterTables);
+            filterTables(); // Run once on load to filter existing selections
+        }
+    };
+
+    function prepareDbSelection() {
+        var dbSelect = document.getElementById("dbSelect");
+        var siteInput = document.getElementById("siteInput");
+        var targetInput = document.getElementById("targetInput");
+        
+        if (!dbSelect || !dbSelect.value) { 
+            alert("Please select database."); 
+            return false; 
+        }
+        
+        var parts = dbSelect.value.split("|");
+        if (parts.length !== 2) { 
+            alert("Invalid database selection."); 
+            return false; 
+        }
+        
+        siteInput.value = parts[0];
+        targetInput.value = parts[1];
+        
+        return true;
+    }
+</script>
