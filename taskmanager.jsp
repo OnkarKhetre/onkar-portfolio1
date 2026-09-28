@@ -1,26 +1,23 @@
 <%@ page import="java.util.*" %>
-<%@ page import="com.dba.models.LockNode" %>
 <%@ page contentType="text/html;charset=UTF-8" language="java" %>
 
 <%
-    // 1. Retrieve attributes passed from the Servlet
-    List<LockNode> lockTreeList = (List<LockNode>) request.getAttribute("lockTreeList");
-    
     String site = (String) request.getAttribute("site");
     
     String target = (String) request.getAttribute("target");
+    
+    String tableName = (String) request.getAttribute("tableName");
     
     String run = (String) request.getAttribute("run");
     
     String errorMsg = (String) request.getAttribute("errorMsg");
     
+    String chartLabels = (String) request.getAttribute("chartLabels");
+    
+    String chartData = (String) request.getAttribute("chartData");
+    
     String[][] dbList = (String[][]) request.getAttribute("dbList");
 
-    // Prevent null pointer exceptions if accessed for the first time
-    if (lockTreeList == null) {
-        lockTreeList = new ArrayList<LockNode>();
-    }
-    
     String ctx = request.getContextPath();
     
     String selectedDb = "";
@@ -28,32 +25,20 @@
     if (site != null && target != null) {
         selectedDb = site + "|" + target;
     }
+    
+    if (tableName == null) {
+        tableName = "";
+    }
 %>
 
 <%!
-    // 2. Helper method to safely escape HTML characters
     public String esc(Object value) {
-        
-        if (value == null) {
-            return "";
-        }
-        
-        return String.valueOf(value)
-            .replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace("\"", "&quot;")
-            .replace("'", "&#39;");
+        if (value == null) return "";
+        return String.valueOf(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&#39;");
     }
     
-    // Helper method to keep dropdown selections active
     public String selected(String actual, String expected) {
-        
-        if (actual != null && actual.equalsIgnoreCase(expected)) {
-            return "selected";
-        }
-        
-        return "";
+        return (actual != null && actual.equalsIgnoreCase(expected)) ? "selected" : "";
     }
 %>
 
@@ -61,13 +46,13 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Lock Tree - DBA Monitor</title>
+<title>Table Growth Tracker - DBA Monitor</title>
+
+<!-- Import Chart.js Library -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
-    /* 3. Base Dashboard Styles */
-    * { 
-        box-sizing: border-box; 
-    }
+    * { box-sizing: border-box; }
     
     body { 
         margin: 0; 
@@ -78,185 +63,60 @@
         color: #e5eefb; 
     }
     
-    .page { 
-        padding: 24px; 
-    }
+    .page { padding: 24px; }
     
-    .topbar { 
-        display: flex; 
-        justify-content: space-between; 
-        align-items: center; 
-        margin-bottom: 18px; 
-    }
+    .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
     
-    h1 { 
-        margin: 0; 
-        font-size: 30px; 
-        font-weight: 900; 
-    }
+    h1 { margin: 0; font-size: 30px; font-weight: 900; }
     
-    .subtitle { 
-        margin-top: 6px; 
-        color: #94a3b8; 
-        font-size: 14px; 
-        font-weight: 600; 
-    }
+    .subtitle { margin-top: 6px; color: #94a3b8; font-size: 14px; font-weight: 600; }
     
     .back-link { 
-        color: #22d3ee; 
-        text-decoration: none; 
-        font-weight: 900; 
-        background: rgba(34,211,238,.12); 
-        border: 1px solid rgba(34,211,238,.25); 
-        padding: 10px 14px; 
-        border-radius: 12px; 
+        color: #22d3ee; text-decoration: none; font-weight: 900; 
+        background: rgba(34,211,238,.12); border: 1px solid rgba(34,211,238,.25); 
+        padding: 10px 14px; border-radius: 12px; 
     }
     
     .card { 
-        background: rgba(15,23,42,.80); 
-        border: 1px solid rgba(148,163,184,.22); 
-        border-radius: 20px; 
-        padding: 18px; 
-        margin-bottom: 18px; 
+        background: rgba(15,23,42,.80); border: 1px solid rgba(148,163,184,.22); 
+        border-radius: 20px; padding: 18px; margin-bottom: 18px; 
         box-shadow: 0 18px 50px rgba(0,0,0,.28); 
     }
     
-    /* 4. Form Styles */
-    .filter-row { 
-        display: flex; 
-        align-items: end; 
-        gap: 12px; 
-        flex-wrap: wrap; 
-    }
+    .filter-row { display: flex; align-items: end; gap: 12px; flex-wrap: wrap; }
     
-    label { 
-        display: block; 
-        font-size: 12px; 
-        color: #cbd5e1; 
-        font-weight: 900; 
-        text-transform: uppercase; 
-        margin-bottom: 6px; 
-    }
+    label { display: block; font-size: 12px; color: #cbd5e1; font-weight: 900; text-transform: uppercase; margin-bottom: 6px; }
     
-    select { 
-        height: 40px; 
-        border: 1px solid rgba(148,163,184,.30); 
-        background: rgba(2,6,23,.58); 
-        color: #e5eefb; 
-        border-radius: 11px; 
-        padding: 0 10px; 
-        outline: none; 
+    select, input[type="text"] { 
+        height: 40px; border: 1px solid rgba(148,163,184,.30); 
+        background: rgba(2,6,23,.58); color: #e5eefb; 
+        border-radius: 11px; padding: 0 10px; outline: none; 
     }
     
     button { 
-        height: 40px; 
-        border: none; 
-        border-radius: 11px; 
-        background: #22d3ee; 
-        color: #06202a; 
-        font-weight: 900; 
-        padding: 0 16px; 
-        cursor: pointer; 
+        height: 40px; border: none; border-radius: 11px; 
+        background: #22d3ee; color: #06202a; font-weight: 900; 
+        padding: 0 16px; cursor: pointer; 
     }
     
-    button:hover { 
-        filter: brightness(1.08); 
-    }
+    button:hover { filter: brightness(1.08); }
     
     .error { 
-        background: rgba(239,68,68,.16); 
-        border: 1px solid rgba(239,68,68,.35); 
-        color: #fecaca; 
-        padding: 12px; 
-        border-radius: 13px; 
-        margin-bottom: 14px; 
-        font-weight: 800; 
+        background: rgba(239,68,68,.16); border: 1px solid rgba(239,68,68,.35); 
+        color: #fecaca; padding: 12px; border-radius: 13px; 
+        margin-bottom: 14px; font-weight: 800; 
     }
     
-    .empty { 
-        padding: 24px; 
-        text-align: center; 
-        color: #94a3b8; 
-        border: 1px dashed rgba(148,163,184,.30); 
-        border-radius: 16px; 
-    }
-    
-    /* 5. Badge Styles */
-    .badge { 
-        display: inline-flex; 
-        align-items: center; 
-        justify-content: center; 
-        padding: 5px 9px; 
-        border-radius: 999px; 
-        font-size: 11px; 
-        font-weight: 900; 
-        white-space: nowrap; 
-    }
-    
-    .badge-critical { 
-        background: rgba(239,68,68,.18); 
-        color: #fecaca; 
-    }
-    
-    .badge-warning { 
-        background: rgba(245,158,11,.18); 
-        color: #fbbf24; 
-    }
-    
-    .badge-normal { 
-        background: rgba(148,163,184,.18); 
-        color: #cbd5e1; 
-    }
-    
-    /* 6. Specific Tree Layout Styles */
-    .tree-node {
-        position: relative; 
-        padding: 14px; 
-        margin-top: 8px; 
-        background: rgba(2,6,23,.58);
-        border: 1px solid rgba(148,163,184,.16); 
-        border-radius: 12px;
-        border-left: 4px solid #fbbf24; 
-        display: flex; 
-        flex-wrap: wrap; 
-        gap: 15px; 
-        align-items: center; 
-        font-size: 13px;
-    }
-    
-    .root-node { 
-        background: rgba(239,68,68,.10); 
-        border-color: rgba(239,68,68,.35); 
-        border-left: 6px solid #ef4444; 
-    }
-    
-    .sql-box { 
-        font-family: Consolas, monospace; 
-        background: rgba(2,6,23,.72); 
-        border: 1px solid rgba(148,163,184,.22); 
-        border-radius: 10px; 
-        padding: 8px; 
-        color: #fde68a; 
-        max-width: 360px; 
-        word-break: break-word; 
-    }
-    
-    .copy-btn { 
-        height: 30px; 
-        padding: 0 9px; 
-        border-radius: 8px; 
-        font-size: 12px; 
-        background: rgba(34,211,238,.18); 
-        color: #67e8f9; 
-        border: 1px solid rgba(34,211,238,.25); 
-        margin-left: auto; 
+    .chart-container {
+        position: relative;
+        height: 500px;
+        width: 100%;
+        margin-top: 20px;
     }
 </style>
 
 <script>
-    // 7. JavaScript Functions
     function prepareDbSelection() {
-        
         var dbSelect = document.getElementById("dbSelect");
         var siteInput = document.getElementById("siteInput");
         var targetInput = document.getElementById("targetInput");
@@ -278,33 +138,17 @@
         
         return true;
     }
-    
-    function copyText(elementId) {
-        
-        var el = document.getElementById(elementId);
-        
-        if (!el) return;
-        
-        var text = el.innerText || el.textContent;
-        
-        if (navigator.clipboard) { 
-            navigator.clipboard.writeText(text).then(function() { 
-                alert("Copied."); 
-            }); 
-        }
-    }
 </script>
 </head>
-
 <body>
-<div class="page">
 
+<div class="page">
+    
     <div class="topbar">
         <div>
-            <h1>Lock Dependency Tree</h1>
-            <div class="subtitle">Hierarchical mapping of database wait chains via GV$SESSION</div>
+            <h1>Table Growth Tracker</h1>
+            <div class="subtitle">Daily historical size mapping for critical tables</div>
         </div>
-        
         <a class="back-link" href="<%= ctx %>/dashboard">← Back to Dashboard</a>
     </div>
 
@@ -314,7 +158,7 @@
 
     <div class="card">
         
-        <form method="get" action="<%= ctx %>/locktree" class="filter-row" onsubmit="return prepareDbSelection();">
+        <form method="get" action="<%= ctx %>/tablegrowth" class="filter-row" onsubmit="return prepareDbSelection();">
             
             <input type="hidden" name="run" value="Y">
             <input type="hidden" name="site" id="siteInput" value="<%= esc(site) %>">
@@ -322,14 +166,11 @@
             
             <div>
                 <label>Database</label>
-                
                 <select id="dbSelect" required>
                     <option value="">Select Database</option>
-                    
                     <% 
                         if (dbList != null) {
                             for (int i = 0; i < dbList.length; i++) {
-                                
                                 String dbValue = dbList[i][0] + "|" + dbList[i][1];
                     %>
                                 <option value="<%= esc(dbValue) %>" <%= selected(selectedDb, dbValue) %>>
@@ -342,77 +183,75 @@
                 </select>
             </div>
             
-            <button type="submit">Analyze Locks</button>
+            <div>
+                <label>Table Name</label>
+                <input type="text" name="tableName" value="<%= esc(tableName) %>" placeholder="e.g. TRANSACTION_LOG" required>
+            </div>
+            
+            <button type="submit">Generate Graph</button>
             
         </form>
     </div>
 
-    <% if ("Y".equalsIgnoreCase(run)) { %>
+    <% if ("Y".equalsIgnoreCase(run) && chartLabels != null && !chartLabels.isEmpty()) { %>
         
         <div class="card">
-            <h2>Active Lock Chain</h2>
+            <h2>Growth Trend: <%= esc(tableName.toUpperCase()) %></h2>
             
-            <% if (lockTreeList.isEmpty()) { %>
-                
-                <div class="empty">No blocking sessions found.</div>
-                
-            <% } else { 
-                
-                for (LockNode node : lockTreeList) {
-                    
-                    boolean isRoot = (node.getLevel() == 1);
-                    
-                    // Indent by 45 pixels for every level deep in the hierarchy
-                    int indent = (node.getLevel() - 1) * 45; 
-            %>
-                
-                <div class="tree-node <%= isRoot ? "root-node" : "" %>" style="margin-left: <%= indent %>px;">
-                    
-                    <div>
-                        <% if (isRoot) { %>
-                            <span class="badge badge-critical">ROOT BLOCKER</span>
-                        <% } else { %>
-                            <span class="badge badge-warning">↳ WAITING</span>
-                        <% } %>
-                    </div>
-                    
-                    <div>
-                        <span class="badge badge-normal">Inst <%= esc(node.getInstId()) %></span>
-                    </div>
-                    
-                    <div>
-                        SID: <b><%= esc(node.getSid()) %></b> , <%= esc(node.getSerial()) %>
-                    </div>
-                    
-                    <div>
-                        <b><%= esc(node.getUsername()) %></b><br>
-                        <span style="color:#94a3b8;"><%= esc(node.getProgram()) %></span>
-                    </div>
-                    
-                    <div>
-                        <%= esc(node.getEvent()) %><br>
-                        <span style="color:#fbbf24;"><%= node.getSecondsInWait() %>s wait</span>
-                    </div>
-                    
-                    <div class="sql-box" id="kill_<%= esc(node.getInstId()) %>_<%= esc(node.getSid()) %>">
-                        <%= esc(node.getKillCommand()) %>
-                    </div>
-                    
-                    <button class="copy-btn" type="button" 
-                            onclick="copyText('kill_<%= esc(node.getInstId()) %>_<%= esc(node.getSid()) %>')">
-                        Copy
-                    </button>
-                    
-                </div>
-                
-            <%  
-                } 
-            } 
-            %>
+            <div class="chart-container">
+                <canvas id="growthChart"></canvas>
+            </div>
+            
         </div>
+
+        <script>
+            // This script physically draws the interactive chart
+            var ctx = document.getElementById('growthChart').getContext('2d');
+            
+            var growthChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    // Injecting the dates from our Servlet here
+                    labels: [<%= chartLabels %>], 
+                    datasets: [{
+                        label: 'Table Size (MB)',
+                        // Injecting the megabyte sizes here
+                        data: [<%= chartData %>],
+                        borderColor: '#22d3ee',
+                        backgroundColor: 'rgba(34, 211, 238, 0.2)',
+                        borderWidth: 3,
+                        pointBackgroundColor: '#fbbf24',
+                        pointBorderColor: '#fff',
+                        pointRadius: 5,
+                        fill: true,
+                        tension: 0.3 // Gives the line a nice smooth curve
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            grid: { color: 'rgba(148,163,184,0.1)' },
+                            ticks: { color: '#94a3b8' },
+                            title: { display: true, text: 'Size in Megabytes (MB)', color: '#cbd5e1' }
+                        },
+                        x: {
+                            grid: { color: 'rgba(148,163,184,0.1)' },
+                            ticks: { color: '#94a3b8' }
+                        }
+                    },
+                    plugins: {
+                        legend: { labels: { color: '#e5eefb' } }
+                    }
+                }
+            });
+        </script>
         
     <% } %>
 
 </div>
+
 </body>
 </html>
