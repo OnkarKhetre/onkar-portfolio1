@@ -1,33 +1,51 @@
-            // Query Oracle DBA_SEGMENTS for exact MB size (Includes Partitions & LOBs)
-            String oracleSql = 
-                "SELECT " +
-                "    t_name AS segment_name, " +
-                "    ROUND(SUM(bytes)/1024/1024, 2) AS size_mb " +
-                "FROM ( " +
-                "    SELECT segment_name AS t_name, bytes " +
-                "    FROM dba_segments " +
-                "    WHERE segment_name IN (" + placeholders.toString() + ") " +
-                "    UNION ALL " +
-                "    SELECT l.table_name AS t_name, s.bytes " +
-                "    FROM dba_lobs l " +
-                "    JOIN dba_segments s ON l.segment_name = s.segment_name " +
-                "    WHERE l.table_name IN (" + placeholders.toString() + ") " +
-                ") " +
-                "GROUP BY t_name";
+    // --------------------------------------------------------
+    // METHOD 2: For the Dashboard Graph (With Date Range)
+    // --------------------------------------------------------
+    public List<TableGrowth> getHistoricalGrowth(String site, String targetDb, String tableName, String startDate, String endDate) {
+        
+        List<TableGrowth> historyList = new ArrayList<TableGrowth>();
+        Connection mysqlConn = null;
+        PreparedStatement ps = null;
+        ResultSet rs = null;
 
-            oraclePs = oracleConn.prepareStatement(oracleSql);
+        try {
+            mysqlConn = databaseconnection.getMysqlConnection();
             
-            // Because we use the IN clause twice (once for tables, once for LOBs), 
-            // we have to set the parameters twice in the PreparedStatement.
-            int totalTables = tableNames.size();
-            for (int i = 0; i < totalTables; i++) {
-                String tName = tableNames.get(i).toUpperCase();
+            // Replaced the LIMIT with a dynamic date range BETWEEN clause
+            String sql = 
+                "SELECT size_mb, recorded_date " +
+                "FROM tracked_table_growth " +
+                "WHERE site = ? AND target_db = ? AND table_name = ? " +
+                "AND recorded_date BETWEEN ? AND ? " +
+                "ORDER BY recorded_date ASC";
+
+            ps = mysqlConn.prepareStatement(sql);
+            ps.setString(1, site);
+            ps.setString(2, targetDb);
+            ps.setString(3, tableName.toUpperCase());
+            ps.setString(4, startDate);
+            ps.setString(5, endDate);
+
+            rs = ps.executeQuery();
+
+            while (rs.next()) {
+                TableGrowth growth = new TableGrowth();
+                growth.setSite(site);
+                growth.setTargetDb(targetDb);
+                growth.setTableName(tableName);
+                growth.setSizeMb(rs.getDouble("size_mb"));
+                growth.setRecordedDate(rs.getString("recorded_date"));
                 
-                // Set parameters for the first IN clause (Base Tables & Partitions)
-                oraclePs.setString(i + 1, tName);
-                
-                // Set parameters for the second IN clause (LOB Segments)
-                oraclePs.setString(i + 1 + totalTables, tName);
+                historyList.add(growth);
             }
 
-            oracleRs = oraclePs.executeQuery();
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+            if (rs != null) try { rs.close(); } catch (Exception e) {}
+            if (ps != null) try { ps.close(); } catch (Exception e) {}
+            if (mysqlConn != null) try { databaseconnection.closeconnection(mysqlConn); } catch (Exception e) {}
+        }
+
+        return historyList;
+    }
