@@ -1,34 +1,21 @@
 <%@ page import="java.util.*" %>
+<%@ page import="com.dba.models.TableConfig" %>
 <%@ page contentType="text/html;charset=UTF-8" language="java" %>
 
 <%
-    String site = (String) request.getAttribute("site");
-    
-    String target = (String) request.getAttribute("target");
-    
-    String tableName = (String) request.getAttribute("tableName");
-    
-    String run = (String) request.getAttribute("run");
-    
     String errorMsg = (String) request.getAttribute("errorMsg");
     
-    String chartLabels = (String) request.getAttribute("chartLabels");
+    String successMsg = (String) request.getAttribute("successMsg");
     
-    String chartData = (String) request.getAttribute("chartData");
+    List<TableConfig> trackedTables = (List<TableConfig>) request.getAttribute("trackedTables");
     
     String[][] dbList = (String[][]) request.getAttribute("dbList");
 
+    if (trackedTables == null) {
+        trackedTables = new ArrayList<TableConfig>();
+    }
+
     String ctx = request.getContextPath();
-    
-    String selectedDb = "";
-    
-    if (site != null && target != null) {
-        selectedDb = site + "|" + target;
-    }
-    
-    if (tableName == null) {
-        tableName = "";
-    }
 %>
 
 <%!
@@ -36,20 +23,13 @@
         if (value == null) return "";
         return String.valueOf(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;").replace("'", "&#39;");
     }
-    
-    public String selected(String actual, String expected) {
-        return (actual != null && actual.equalsIgnoreCase(expected)) ? "selected" : "";
-    }
 %>
 
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Table Growth Tracker - DBA Monitor</title>
-
-<!-- Import Chart.js Library -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<title>Tracker Configuration - DBA Monitor</title>
 
 <style>
     * { box-sizing: border-box; }
@@ -63,7 +43,7 @@
         color: #e5eefb; 
     }
     
-    .page { padding: 24px; }
+    .page { padding: 24px; max-width: 1200px; margin: 0 auto; }
     
     .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
     
@@ -90,7 +70,7 @@
     select, input[type="text"] { 
         height: 40px; border: 1px solid rgba(148,163,184,.30); 
         background: rgba(2,6,23,.58); color: #e5eefb; 
-        border-radius: 11px; padding: 0 10px; outline: none; 
+        border-radius: 11px; padding: 0 10px; outline: none; width: 250px;
     }
     
     button { 
@@ -107,16 +87,29 @@
         margin-bottom: 14px; font-weight: 800; 
     }
     
-    .chart-container {
-        position: relative;
-        height: 500px;
-        width: 100%;
-        margin-top: 20px;
+    .success { 
+        background: rgba(34,197,94,.16); border: 1px solid rgba(34,197,94,.35); 
+        color: #bbf7d0; padding: 12px; border-radius: 13px; 
+        margin-bottom: 14px; font-weight: 800; 
+    }
+    
+    table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+    
+    th { text-align: left; padding: 12px; border-bottom: 2px solid rgba(148,163,184,.22); color: #94a3b8; font-size: 13px; text-transform: uppercase; }
+    
+    td { padding: 12px; border-bottom: 1px solid rgba(148,163,184,.12); font-size: 14px; }
+    
+    tr:hover { background: rgba(34,211,238,.05); }
+    
+    .badge-normal { 
+        background: rgba(148,163,184,.18); color: #cbd5e1; 
+        padding: 4px 8px; border-radius: 8px; font-size: 12px; font-weight: bold;
     }
 </style>
 
 <script>
     function prepareDbSelection() {
+        
         var dbSelect = document.getElementById("dbSelect");
         var siteInput = document.getElementById("siteInput");
         var targetInput = document.getElementById("targetInput");
@@ -140,14 +133,14 @@
     }
 </script>
 </head>
-<body>
 
+<body>
 <div class="page">
     
     <div class="topbar">
         <div>
-            <h1>Table Growth Tracker</h1>
-            <div class="subtitle">Daily historical size mapping for critical tables</div>
+            <h1>Tracker Configuration</h1>
+            <div class="subtitle">Add tables to the automated nightly growth tracking system</div>
         </div>
         <a class="back-link" href="<%= ctx %>/dashboard">← Back to Dashboard</a>
     </div>
@@ -155,17 +148,22 @@
     <% if (errorMsg != null) { %>
         <div class="error"><%= esc(errorMsg) %></div>
     <% } %>
+    
+    <% if (successMsg != null) { %>
+        <div class="success"><%= esc(successMsg) %></div>
+    <% } %>
 
+    <!-- Add New Table Form -->
     <div class="card">
+        <h2>Add Table to Monitor</h2>
         
-        <form method="get" action="<%= ctx %>/tablegrowth" class="filter-row" onsubmit="return prepareDbSelection();">
+        <form method="post" action="<%= ctx %>/tableconfig" class="filter-row" onsubmit="return prepareDbSelection();">
             
-            <input type="hidden" name="run" value="Y">
-            <input type="hidden" name="site" id="siteInput" value="<%= esc(site) %>">
-            <input type="hidden" name="target" id="targetInput" value="<%= esc(target) %>">
+            <input type="hidden" name="site" id="siteInput" value="">
+            <input type="hidden" name="target" id="targetInput" value="">
             
             <div>
-                <label>Database</label>
+                <label>Target Database</label>
                 <select id="dbSelect" required>
                     <option value="">Select Database</option>
                     <% 
@@ -173,7 +171,7 @@
                             for (int i = 0; i < dbList.length; i++) {
                                 String dbValue = dbList[i][0] + "|" + dbList[i][1];
                     %>
-                                <option value="<%= esc(dbValue) %>" <%= selected(selectedDb, dbValue) %>>
+                                <option value="<%= esc(dbValue) %>">
                                     <%= esc(dbList[i][0]) %>-<%= esc(dbList[i][1]) %>
                                 </option>
                     <% 
@@ -185,73 +183,52 @@
             
             <div>
                 <label>Table Name</label>
-                <input type="text" name="tableName" value="<%= esc(tableName) %>" placeholder="e.g. TRANSACTION_LOG" required>
+                <input type="text" name="tableName" placeholder="e.g. AUDIT_LOGS" required>
             </div>
             
-            <button type="submit">Generate Graph</button>
+            <button type="submit">Start Tracking</button>
             
         </form>
     </div>
 
-    <% if ("Y".equalsIgnoreCase(run) && chartLabels != null && !chartLabels.isEmpty()) { %>
+    <!-- Currently Tracked Tables Grid -->
+    <div class="card">
+        <h2>Currently Tracked Tables</h2>
         
-        <div class="card">
-            <h2>Growth Trend: <%= esc(tableName.toUpperCase()) %></h2>
+        <% if (trackedTables.isEmpty()) { %>
+            <div style="color: #94a3b8; padding: 15px 0;">No tables are currently being monitored. Add one above!</div>
+        <% } else { %>
             
-            <div class="chart-container">
-                <canvas id="growthChart"></canvas>
-            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Database</th>
+                        <th>Table Name</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <% for (TableConfig table : trackedTables) { %>
+                        <tr>
+                            <td>
+                                <b><%= esc(table.getTargetDb()) %></b>
+                                <span style="font-size: 11px; color: #94a3b8; margin-left: 5px;">(<%= esc(table.getSite()) %>)</span>
+                            </td>
+                            <td style="font-family: Consolas, monospace; color: #fde68a;">
+                                <%= esc(table.getTableName()) %>
+                            </td>
+                            <td>
+                                <span class="badge-normal">Active</span>
+                            </td>
+                        </tr>
+                    <% } %>
+                </tbody>
+            </table>
             
-        </div>
-
-        <script>
-            // This script physically draws the interactive chart
-            var ctx = document.getElementById('growthChart').getContext('2d');
-            
-            var growthChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    // Injecting the dates from our Servlet here
-                    labels: [<%= chartLabels %>], 
-                    datasets: [{
-                        label: 'Table Size (MB)',
-                        // Injecting the megabyte sizes here
-                        data: [<%= chartData %>],
-                        borderColor: '#22d3ee',
-                        backgroundColor: 'rgba(34, 211, 238, 0.2)',
-                        borderWidth: 3,
-                        pointBackgroundColor: '#fbbf24',
-                        pointBorderColor: '#fff',
-                        pointRadius: 5,
-                        fill: true,
-                        tension: 0.3 // Gives the line a nice smooth curve
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            beginAtZero: false,
-                            grid: { color: 'rgba(148,163,184,0.1)' },
-                            ticks: { color: '#94a3b8' },
-                            title: { display: true, text: 'Size in Megabytes (MB)', color: '#cbd5e1' }
-                        },
-                        x: {
-                            grid: { color: 'rgba(148,163,184,0.1)' },
-                            ticks: { color: '#94a3b8' }
-                        }
-                    },
-                    plugins: {
-                        legend: { labels: { color: '#e5eefb' } }
-                    }
-                }
-            });
-        </script>
+        <% } %>
         
-    <% } %>
+    </div>
 
 </div>
-
 </body>
 </html>
