@@ -1,57 +1,33 @@
-<script>
-    // NEW: Runs instantly when the page loads, and whenever the Database dropdown changes
-    function filterTables() {
-        var dbSelect = document.getElementById("dbSelect");
-        var tableSelect = document.getElementById("tableSelect");
-        
-        if (!dbSelect || !tableSelect) return;
-        
-        var selectedDbString = dbSelect.value; // Looks like "PR|MIDB"
-        var selectedTarget = selectedDbString.split("|")[1]; // Extracts "MIDB"
-        
-        var options = tableSelect.getElementsByTagName("option");
-        
-        for (var i = 0; i < options.length; i++) {
-            var opt = options[i];
-            var optDb = opt.getAttribute("data-db");
+            // Query Oracle DBA_SEGMENTS for exact MB size (Includes Partitions & LOBs)
+            String oracleSql = 
+                "SELECT " +
+                "    t_name AS segment_name, " +
+                "    ROUND(SUM(bytes)/1024/1024, 2) AS size_mb " +
+                "FROM ( " +
+                "    SELECT segment_name AS t_name, bytes " +
+                "    FROM dba_segments " +
+                "    WHERE segment_name IN (" + placeholders.toString() + ") " +
+                "    UNION ALL " +
+                "    SELECT l.table_name AS t_name, s.bytes " +
+                "    FROM dba_lobs l " +
+                "    JOIN dba_segments s ON l.segment_name = s.segment_name " +
+                "    WHERE l.table_name IN (" + placeholders.toString() + ") " +
+                ") " +
+                "GROUP BY t_name";
+
+            oraclePs = oracleConn.prepareStatement(oracleSql);
             
-            // Show the default "Select Table" option OR tables that match the selected DB
-            if (!optDb || optDb === selectedTarget) {
-                opt.style.display = "";
-            } else {
-                opt.style.display = "none";
+            // Because we use the IN clause twice (once for tables, once for LOBs), 
+            // we have to set the parameters twice in the PreparedStatement.
+            int totalTables = tableNames.size();
+            for (int i = 0; i < totalTables; i++) {
+                String tName = tableNames.get(i).toUpperCase();
+                
+                // Set parameters for the first IN clause (Base Tables & Partitions)
+                oraclePs.setString(i + 1, tName);
+                
+                // Set parameters for the second IN clause (LOB Segments)
+                oraclePs.setString(i + 1 + totalTables, tName);
             }
-        }
-    }
 
-    // Attach the filter to the database dropdown
-    window.onload = function() {
-        var dbSelect = document.getElementById("dbSelect");
-        if (dbSelect) {
-            dbSelect.addEventListener("change", filterTables);
-            filterTables(); // Run once on load to filter existing selections
-        }
-    };
-
-    function prepareDbSelection() {
-        var dbSelect = document.getElementById("dbSelect");
-        var siteInput = document.getElementById("siteInput");
-        var targetInput = document.getElementById("targetInput");
-        
-        if (!dbSelect || !dbSelect.value) { 
-            alert("Please select database."); 
-            return false; 
-        }
-        
-        var parts = dbSelect.value.split("|");
-        if (parts.length !== 2) { 
-            alert("Invalid database selection."); 
-            return false; 
-        }
-        
-        siteInput.value = parts[0];
-        targetInput.value = parts[1];
-        
-        return true;
-    }
-</script>
+            oracleRs = oraclePs.executeQuery();
