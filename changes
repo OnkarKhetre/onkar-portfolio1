@@ -1,111 +1,124 @@
-    // --------------------------------------------------------
-    // METHOD 3: Add a new table to the tracking configuration
-    // --------------------------------------------------------
-    public void addTableToConfig(String site, String targetDb, String tableName) throws Exception {
+package com.dba.config;
+
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+
+import com.dba.connection.databaseconnection;
+import com.dba.service.TableGrowthService;
+
+import jakarta.servlet.ServletContextEvent;
+import jakarta.servlet.ServletContextListener;
+import jakarta.servlet.annotation.WebListener;
+
+@WebListener
+public class TableGrowthScheduler implements ServletContextListener {
+
+    private ScheduledExecutorService scheduler;
+    
+    private TableGrowthService growthService = new TableGrowthService();
+
+    @Override
+    public void contextInitialized(ServletContextEvent event) {
         
-        Connection mysqlConn = null;
-        PreparedStatement checkPs = null;
-        ResultSet checkRs = null;
-        PreparedStatement insertPs = null;
+        scheduler = Executors.newSingleThreadScheduledExecutor();
 
-        try {
+        Runnable captureTask = new Runnable() {
             
-            mysqlConn = databaseconnection.getMysqlConnection();
-            
-            // 1. Check if this table is already being tracked to prevent duplicates
-            String checkSql = "SELECT id FROM tracker_config WHERE site = ? AND target_db = ? AND table_name = ?";
-            
-            checkPs = mysqlConn.prepareStatement(checkSql);
-            checkPs.setString(1, site);
-            checkPs.setString(2, targetDb);
-            checkPs.setString(3, tableName.toUpperCase());
-            
-            checkRs = checkPs.executeQuery();
-            
-            if (checkRs.next()) {
-                throw new Exception("This table is already being tracked for " + targetDb + ".");
-            }
+            @Override
+            public void run() {
+                
+                System.out.println("Starting automated dynamic table size capture...");
+                
+                Connection mysqlConn = null;
+                PreparedStatement ps = null;
+                ResultSet rs = null;
+                
+                // This map will group table names by their Target Database (e.g., MIDB -> [Table1, Table2])
+                Map<String, List<String>> dbToTablesMap = new HashMap<String, List<String>>();
+                
+                // We assume all configured databases belong to the "PR" site for this loop
+                String site = "PR"; 
 
-            // 2. Insert the new table into MySQL
-            String insertSql = "INSERT INTO tracker_config (site, target_db, table_name) VALUES (?, ?, ?)";
-            
-            insertPs = mysqlConn.prepareStatement(insertSql);
-            insertPs.setString(1, site);
-            insertPs.setString(2, targetDb);
-            insertPs.setString(3, tableName.toUpperCase());
-            
-            insertPs.executeUpdate();
+                try {
+                    
+                    // 1. Ask MySQL which tables we need to track today
+                    mysqlConn = databaseconnection.getMysqlConnection();
+                    
+                    String configSql = "SELECT target_db, table_name FROM tracker_config WHERE site = ?";
+                    
+                    ps = mysqlConn.prepareStatement(configSql);
+                    ps.setString(1, site);
+                    
+                    rs = ps.executeQuery();
 
-        } finally {
-            
-            if (checkRs != null) {
-                try { checkRs.close(); } catch (Exception e) {}
+                    // Group the tables by database
+                    while (rs.next()) {
+                        
+                        String targetDb = rs.getString("target_db");
+                        String tableName = rs.getString("table_name");
+                        
+                        if (!dbToTablesMap.containsKey(targetDb)) {
+                            dbToTablesMap.put(targetDb, new ArrayList<String>());
+                        }
+                        
+                        dbToTablesMap.get(targetDb).add(tableName);
+                    }
+                    
+                    // 2. Loop through each database and execute the Oracle capture
+                    for (Map.Entry<String, List<String>> entry : dbToTablesMap.entrySet()) {
+                        
+                        String targetDb = entry.getKey();
+                        List<String> tablesToTrack = entry.getValue();
+                        
+                        System.out.println("Capturing sizes for " + targetDb + "...");
+                        
+                        growthService.captureDailyTableSizes(site, targetDb, tablesToTrack);
+                        
+                    }
+
+                    System.out.println("Automated table size capture complete.");
+
+                } catch (Exception e) {
+                    
+                    System.err.println("Error running dynamic background capture.");
+                    e.printStackTrace();
+                    
+                } finally {
+                    
+                    if (rs != null) {
+                        try { rs.close(); } catch (Exception e) {}
+                    }
+                    
+                    if (ps != null) {
+                        try { ps.close(); } catch (Exception e) {}
+                    }
+                    
+                    if (mysqlConn != null) {
+                        try { databaseconnection.closeconnection(mysqlConn); } catch (Exception e) {}
+                    }
+                }
             }
-            
-            if (checkPs != null) {
-                try { checkPs.close(); } catch (Exception e) {}
-            }
-            
-            if (insertPs != null) {
-                try { insertPs.close(); } catch (Exception e) {}
-            }
-            
-            if (mysqlConn != null) {
-                try { databaseconnection.closeconnection(mysqlConn); } catch (Exception e) {}
-            }
-            
-        }
+        };
+
+        // Run instantly on boot, then every 24 hours
+        scheduler.scheduleAtFixedRate(captureTask, 0, 24, TimeUnit.HOURS);
+        
     }
 
-
-    // --------------------------------------------------------
-    // METHOD 4: Fetch all currently tracked tables for the UI
-    // --------------------------------------------------------
-    public List<TableConfig> getAllConfiguredTables() throws Exception {
+    @Override
+    public void contextDestroyed(ServletContextEvent event) {
         
-        List<TableConfig> configList = new ArrayList<TableConfig>();
-        
-        Connection mysqlConn = null;
-        PreparedStatement ps = null;
-        ResultSet rs = null;
-
-        try {
-            
-            mysqlConn = databaseconnection.getMysqlConnection();
-            
-            // Fetch all tables, ordered nicely by Database then Table Name
-            String sql = "SELECT id, site, target_db, table_name FROM tracker_config ORDER BY target_db ASC, table_name ASC";
-            
-            ps = mysqlConn.prepareStatement(sql);
-            rs = ps.executeQuery();
-
-            while (rs.next()) {
-                
-                TableConfig config = new TableConfig();
-                
-                config.setId(rs.getInt("id"));
-                config.setSite(rs.getString("site"));
-                config.setTargetDb(rs.getString("target_db"));
-                config.setTableName(rs.getString("table_name"));
-                
-                configList.add(config);
-            }
-
-        } finally {
-            
-            if (rs != null) {
-                try { rs.close(); } catch (Exception e) {}
-            }
-            
-            if (ps != null) {
-                try { ps.close(); } catch (Exception e) {}
-            }
-            
-            if (mysqlConn != null) {
-                try { databaseconnection.closeconnection(mysqlConn); } catch (Exception e) {}
-            }
-            
+        if (scheduler != null) {
+            scheduler.shutdownNow();
         }
-
-        return configList;
+        
     }
+}
