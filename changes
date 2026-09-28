@@ -1,4 +1,111 @@
-<a href="<%= request.getContextPath() %>/tablegrowth" class="nav-item">
-    <span class="nav-icon">📈</span>
-    <span>Table Growth Tracker</span>
-</a>
+    // --------------------------------------------------------
+    // METHOD 3: Add a new table to the tracking configuration
+    // --------------------------------------------------------
+    public void addTableToConfig(String site, String targetDb, String tableName) throws Exception {
+        
+        Connection mysqlConn = null;
+        PreparedStatement checkPs = null;
+        ResultSet checkRs = null;
+        PreparedStatement insertPs = null;
+
+        try {
+            
+            mysqlConn = databaseconnection.getMysqlConnection();
+            
+            // 1. Check if this table is already being tracked to prevent duplicates
+            String checkSql = "SELECT id FROM tracker_config WHERE site = ? AND target_db = ? AND table_name = ?";
+            
+            checkPs = mysqlConn.prepareStatement(checkSql);
+            checkPs.setString(1, site);
+            checkPs.setString(2, targetDb);
+            checkPs.setString(3, tableName.toUpperCase());
+            
+            checkRs = checkPs.executeQuery();
+            
+            if (checkRs.next()) {
+                throw new Exception("This table is already being tracked for " + targetDb + ".");
+            }
+
+            // 2. Insert the new table into MySQL
+            String insertSql = "INSERT INTO tracker_config (site, target_db, table_name) VALUES (?, ?, ?)";
+            
+            insertPs = mysqlConn.prepareStatement(insertSql);
+            insertPs.setString(1, site);
+            insertPs.setString(2, targetDb);
+            insertPs.setString(3, tableName.toUpperCase());
+            
+            insertPs.executeUpdate();
+
+        } finally {
+            
+            if (checkRs != null) {
+                try { checkRs.close(); } catch (Exception e) {}
+            }
+            
+            if (checkPs != null) {
+                try { checkPs.close(); } catch (Exception e) {}
+            }
+            
+            if (insertPs != null) {
+                try { insertPs.close(); } catch (Exception e) {}
+            }
+            
+            if (mysqlConn != null) {
+                try { databaseconnection.closeconnection(mysqlConn); } catch (Exception e) {}
+            }
+            
+        }
+    }
+
+
+    // --------------------------------------------------------
+    // METHOD 4: Fetch all currently tracked tables for the UI
+    // --------------------------------------------------------
+    public List<TableConfig> getAllConfiguredTables() throws Exception {
+        
+        List<TableConfig> configList = new ArrayList<TableConfig>();
+        
+        Connection mysqlConn = null;
+        PreparedStatement ps = null;
+        ResultSet rs = null;
+
+        try {
+            
+            mysqlConn = databaseconnection.getMysqlConnection();
+            
+            // Fetch all tables, ordered nicely by Database then Table Name
+            String sql = "SELECT id, site, target_db, table_name FROM tracker_config ORDER BY target_db ASC, table_name ASC";
+            
+            ps = mysqlConn.prepareStatement(sql);
+            rs = ps.executeQuery();
+
+            while (rs.next()) {
+                
+                TableConfig config = new TableConfig();
+                
+                config.setId(rs.getInt("id"));
+                config.setSite(rs.getString("site"));
+                config.setTargetDb(rs.getString("target_db"));
+                config.setTableName(rs.getString("table_name"));
+                
+                configList.add(config);
+            }
+
+        } finally {
+            
+            if (rs != null) {
+                try { rs.close(); } catch (Exception e) {}
+            }
+            
+            if (ps != null) {
+                try { ps.close(); } catch (Exception e) {}
+            }
+            
+            if (mysqlConn != null) {
+                try { databaseconnection.closeconnection(mysqlConn); } catch (Exception e) {}
+            }
+            
+        }
+
+        return configList;
+    }
