@@ -1,51 +1,112 @@
-    // --------------------------------------------------------
-    // METHOD 2: For the Dashboard Graph (With Date Range)
-    // --------------------------------------------------------
-    public List<TableGrowth> getHistoricalGrowth(String site, String targetDb, String tableName, String startDate, String endDate) {
+// Add this import at the top of your Servlet
+import java.time.LocalDate;
+
+    @Override
+    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+
+        if (!isLoggedIn(request)) {
+            response.sendRedirect(request.getContextPath() + "/login.jsp");
+            return;
+        }
+
+        String site = request.getParameter("site");
+        if (site != null) site = site.trim();
         
-        List<TableGrowth> historyList = new ArrayList<TableGrowth>();
-        Connection mysqlConn = null;
-        PreparedStatement ps = null;
-        ResultSet rs = null;
+        String target = request.getParameter("target");
+        if (target != null) target = target.trim();
+        
+        String tableName = request.getParameter("tableName");
+        if (tableName != null) tableName = tableName.trim();
+        
+        String run = request.getParameter("run");
+        
+        // Grab dates from UI, or default to the last 30 days
+        String startDate = request.getParameter("startDate");
+        String endDate = request.getParameter("endDate");
+        
+        if (startDate == null || startDate.isEmpty()) {
+            startDate = LocalDate.now().minusDays(30).toString();
+        }
+        if (endDate == null || endDate.isEmpty()) {
+            endDate = LocalDate.now().toString();
+        }
+
+        StringBuilder chartLabels = new StringBuilder();
+        StringBuilder chartData = new StringBuilder();
+        
+        String totalIncrementStr = "0.00 TB";
+        String statusColor = "#22d3ee"; // Default cyan
 
         try {
-            mysqlConn = databaseconnection.getMysqlConnection();
-            
-            // Replaced the LIMIT with a dynamic date range BETWEEN clause
-            String sql = 
-                "SELECT size_mb, recorded_date " +
-                "FROM tracked_table_growth " +
-                "WHERE site = ? AND target_db = ? AND table_name = ? " +
-                "AND recorded_date BETWEEN ? AND ? " +
-                "ORDER BY recorded_date ASC";
+            // Fetch dropdown data
+            List<TableConfig> trackedTables = service.getAllConfiguredTables();
+            request.setAttribute("trackedTables", trackedTables);
 
-            ps = mysqlConn.prepareStatement(sql);
-            ps.setString(1, site);
-            ps.setString(2, targetDb);
-            ps.setString(3, tableName.toUpperCase());
-            ps.setString(4, startDate);
-            ps.setString(5, endDate);
-
-            rs = ps.executeQuery();
-
-            while (rs.next()) {
-                TableGrowth growth = new TableGrowth();
-                growth.setSite(site);
-                growth.setTargetDb(targetDb);
-                growth.setTableName(tableName);
-                growth.setSizeMb(rs.getDouble("size_mb"));
-                growth.setRecordedDate(rs.getString("recorded_date"));
+            if ("Y".equalsIgnoreCase(run)) {
                 
-                historyList.add(growth);
+                if (site == null || target == null || tableName == null) {
+                    throw new Exception("Please select a valid database and table.");
+                }
+
+                // Pass the dates to our updated Service method
+                List<TableGrowth> history = service.getHistoricalGrowth(site, target, tableName, startDate, endDate);
+
+                if (history.isEmpty()) {
+                    throw new Exception("No data found for " + tableName + " between " + startDate + " and " + endDate);
+                }
+
+                double firstSizeTb = 0;
+                double lastSizeTb = 0;
+
+                for (int i = 0; i < history.size(); i++) {
+                    
+                    // Convert MB to TB (1 TB = 1024 * 1024 MB)
+                    double sizeTb = history.get(i).getSizeMb() / 1048576.0;
+                    
+                    if (i == 0) firstSizeTb = sizeTb;
+                    if (i == history.size() - 1) lastSizeTb = sizeTb;
+
+                    chartLabels.append("'").append(history.get(i).getRecordedDate()).append("'");
+                    // Format to 4 decimal places for TB precision
+                    chartData.append(String.format("%.4f", sizeTb));
+
+                    if (i < history.size() - 1) {
+                        chartLabels.append(",");
+                        chartData.append(",");
+                    }
+                }
+                
+                // Calculate the total increment
+                double increment = lastSizeTb - firstSizeTb;
+                
+                // Add a '+' sign if it grew, and change color based on growth
+                if (increment > 0) {
+                    totalIncrementStr = "+" + String.format("%.4f", increment) + " TB";
+                    statusColor = "#f43f5e"; // Red if growing
+                } else if (increment < 0) {
+                    totalIncrementStr = String.format("%.4f", increment) + " TB";
+                    statusColor = "#10b981"; // Green if shrinking
+                } else {
+                    totalIncrementStr = "0.0000 TB (No Change)";
+                }
             }
 
         } catch (Exception e) {
             e.printStackTrace();
-        } finally {
-            if (rs != null) try { rs.close(); } catch (Exception e) {}
-            if (ps != null) try { ps.close(); } catch (Exception e) {}
-            if (mysqlConn != null) try { databaseconnection.closeconnection(mysqlConn); } catch (Exception e) {}
+            request.setAttribute("errorMsg", e.getMessage());
         }
 
-        return historyList;
+        request.setAttribute("site", site);
+        request.setAttribute("target", target);
+        request.setAttribute("tableName", tableName);
+        request.setAttribute("startDate", startDate);
+        request.setAttribute("endDate", endDate);
+        request.setAttribute("run", run);
+        request.setAttribute("chartLabels", chartLabels.toString());
+        request.setAttribute("chartData", chartData.toString());
+        request.setAttribute("incrementStr", totalIncrementStr);
+        request.setAttribute("statusColor", statusColor);
+        request.setAttribute("dbList", DatabaseRegistry.ALL_DATABASES);
+
+        request.getRequestDispatcher("/tablegrowth.jsp").forward(request, response);
     }
