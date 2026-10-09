@@ -1,123 +1,91 @@
-package com.dba.controller;
+package sbi.prod;
 
-import java.io.IOException;
-import java.util.List;
-
-import com.dba.config.DatabaseRegistry;
-import com.dba.models.TableConfig;
-import com.dba.service.TableGrowthService;
-
+import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
+import java.util.*;
 import jakarta.servlet.ServletException;
+import jakarta.servlet.annotation.MultipartConfig;
 import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import jakarta.servlet.http.HttpSession;
+import jakarta.servlet.http.Part;
 
-@WebServlet("/tableconfig")
-public class TableConfigServlet extends HttpServlet {
-    
-    private static final long serialVersionUID = 1L;
-    
-    private TableGrowthService service = new TableGrowthService();
+@WebServlet("/ReportGeneratorServlet")
+@MultipartConfig(maxFileSize = 10485760) // 10MB limit
+public class ReportGeneratorServlet extends HttpServlet {
 
-    // --------------------------------------------------------
-    // GET: Loads the page and displays the current tables
-    // --------------------------------------------------------
-    @Override
-    protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
-
-        if (!isLoggedIn(request)) {
-            
-            response.sendRedirect(request.getContextPath() + "/login.jsp");
-            return;
-            
-        }
-
-        loadPageData(request);
-        
-        request.getRequestDispatcher("/tableconfig.jsp").forward(request, response);
-        
-    }
-
-    // --------------------------------------------------------
-    // POST: Handles the form submission to add a new table
-    // --------------------------------------------------------
-    @Override
     protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
-
-        if (!isLoggedIn(request)) {
-            
-            response.sendRedirect(request.getContextPath() + "/login.jsp");
-            return;
-            
-        }
-
-        String site = request.getParameter("site");
         
-        String target = request.getParameter("target");
-        
-        String tableName = request.getParameter("tableName");
-
-        try {
-            
-            if (site == null || site.trim().isEmpty() || target == null || target.trim().isEmpty()) {
-                throw new Exception("Please select a database.");
-            }
-            
-            if (tableName == null || tableName.trim().isEmpty()) {
-                throw new Exception("Please enter a valid table name.");
-            }
-
-            // Save the new table to MySQL
-            service.addTableToConfig(site, target, tableName.trim());
-            
-            request.setAttribute("successMsg", "Table " + tableName.toUpperCase() + " successfully added to tracking!");
-
-        } catch (Exception e) {
-            
-            e.printStackTrace();
-            request.setAttribute("errorMsg", e.getMessage());
-            
-        }
-
-        // Reload the lists to show the newly added table
-        loadPageData(request);
-        
-        request.getRequestDispatcher("/tableconfig.jsp").forward(request, response);
-    }
-
-    // --------------------------------------------------------
-    // Helper method to load dropdowns and tracked tables list
-    // --------------------------------------------------------
-    private void loadPageData(HttpServletRequest request) {
+        File tempExcel = null;
+        File tempDoc = null;
         
         try {
-            
-            List<TableConfig> trackedTables = service.getAllConfiguredTables();
-            
-            request.setAttribute("trackedTables", trackedTables);
-            
-        } catch (Exception e) {
-            
-            e.printStackTrace();
-            request.setAttribute("errorMsg", "Failed to load tracked tables: " + e.getMessage());
-            
-        }
-        
-        request.setAttribute("dbList", DatabaseRegistry.ALL_DATABASES);
-        
-    }
+            // 1. Save the uploaded Book1.xlsx to a temporary server file
+            Part filePart = request.getPart("excelData");
+            tempExcel = File.createTempFile("uploaded_excel_", ".xlsx");
+            try (InputStream input = filePart.getInputStream()) {
+                Files.copy(input, tempExcel.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
 
-    private boolean isLoggedIn(HttpServletRequest request) {
-        
-        HttpSession session = request.getSession(false);
-        
-        if (session == null) {
-            return false;
+            // 2. Read the blank Template from the hidden WEB-INF folder to a temporary working file
+            tempDoc = File.createTempFile("working_report_", ".docx");
+            try (InputStream templateStream = getServletContext().getResourceAsStream("/WEB-INF/Daily_Report_Template.docx")) {
+                if (templateStream == null) {
+                    throw new FileNotFoundException("Template not found. Make sure Daily_Report_Template.docx is inside the WEB-INF folder!");
+                }
+                Files.copy(templateStream, tempDoc.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
+
+            // 3. These strings replace your old E:\\ hardcoded paths!
+            String excelpath = tempExcel.getAbsolutePath();
+            String file_path = tempDoc.getAbsolutePath();
+
+            // ==============================================================================
+            // 4. YOUR BUSINESS LOGIC GOES HERE
+            // Paste EVERYTHING from inside your old performreportgeneration() method here.
+            // 
+            // NOTE: Do NOT copy your old "String excelpath=..." or "String file_path=..." lines.
+            // We already defined them right above this block!
+            // ==============================================================================
+            
+            /* 
+               Example of your pasted code:
+               Map<String, String> gen5 = new HashMap<>();
+               
+               // ... your excelservice logic reading from 'excelpath' ...
+               // ... your databaseservice config and calls ...
+               // ... your graphservice call generating 'graphpath' ...
+               
+               // At the very end of your pasted code, call update and pass file_path as the FIRST parameter!
+               reportorigin.update(file_path, graphpath, volsummary, dbsize1, dbsize2, dbsize3, db1tbs, db2tbs, db3tbs, db4tbs, db5tbs, db6tbs, user1, user2, user3, user4, db1backup, db2backup, db1arch, db2arch, diskspace1, diskspace2);
+            */
+
+            // ==============================================================================
+
+            // 5. Stream the successfully updated document back to the user's browser as a download
+            response.setContentType("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+            response.setHeader("Content-Disposition", "attachment; filename=\"Daily_Report_Completed.docx\"");
+            
+            try (InputStream docIn = new FileInputStream(tempDoc);
+                 OutputStream out = response.getOutputStream()) {
+                byte[] buffer = new byte[8192];
+                int bytesRead;
+                while ((bytesRead = docIn.read(buffer)) != -1) {
+                    out.write(buffer, 0, bytesRead);
+                }
+            }
+
+        } catch (Exception e) {
+            // If anything fails, print the exact error to the browser screen for debugging
+            e.printStackTrace();
+            response.setContentType("text/html");
+            response.getWriter().println("<h3>Error Generating Report:</h3><pre>" + e.getMessage() + "</pre>");
+        } finally {
+            // 6. Housekeeping: Delete the temporary files so the Tomcat server doesn't fill up
+            if (tempExcel != null && tempExcel.exists()) tempExcel.delete();
+            if (tempDoc != null && tempDoc.exists()) tempDoc.delete();
         }
-        
-        return session.getAttribute("loggedUser") != null;
-        
     }
 }
